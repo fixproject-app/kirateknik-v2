@@ -563,6 +563,7 @@ async function panggilKelolaAkun(body, pesanSukses) {
     const { data, error } = await sb.functions.invoke('kelola-akun', { body });
     if (error) {
       let msg = error.message;
+      if (error.name === 'FunctionsFetchError') msg = 'Edge Function "kelola-akun" tidak bisa dihubungi. Pastikan sudah di-deploy dan pengaturan Verify JWT dimatikan.';
       try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch (_) {}
       throw new Error(msg);
     }
@@ -598,14 +599,29 @@ document.getElementById('form-akun-baru').addEventListener('submit', async (e) =
   const nama = document.getElementById('akun-nama').value.trim();
   const username = document.getElementById('akun-username').value.trim().toLowerCase();
   const password = document.getElementById('akun-password').value;
+  if (!/^[a-z0-9._-]{3,30}$/.test(username)) {
+    showToast('Username hanya huruf kecil, angka, titik, atau strip (3-30 karakter), tanpa @.', 'error');
+    return;
+  }
+  if (password.length < 6) { showToast('Kata sandi minimal 6 karakter.', 'error'); return; }
+
   let mekanikId = document.getElementById('akun-mekanik').value || null;
+  let barudibuat = false;
   if (!mekanikId) {
     const m = await callSupabase(sb.from('mekanik').insert({ nama }).select().single());
     if (!m.success) return;
     mekanikId = m.data.id;
+    barudibuat = true;
   }
   const r = await panggilKelolaAkun({ aksi: 'buat', username, nama, password, mekanik_id: mekanikId }, 'Akun berhasil dibuat.');
-  if (r.success) { e.target.reset(); await loadAllReferenceData(); loadAkun(); }
+  if (!r.success) {
+    // batalkan mekanik yang baru dibuat agar tidak menumpuk saat akun gagal dibuat
+    if (barudibuat) await sb.from('mekanik').delete().eq('id', mekanikId);
+    return;
+  }
+  e.target.reset();
+  await loadAllReferenceData();
+  loadAkun();
 });
 
 // ============================================================
