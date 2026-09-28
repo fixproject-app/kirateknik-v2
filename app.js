@@ -4,10 +4,25 @@
 
 // ── Konfigurasi Supabase ──
 // Isi dengan Project URL dan anon public key dari Supabase Dashboard > Project Settings > API
-const SUPABASE_URL = 'https://potjecpcedeajvugbcla.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_j4V6keWo2jXsR25DAXj5-g_3V58y9qw';
+const SUPABASE_URL = 'https://xxxxxxxxxxxx.supabase.co';
+const SUPABASE_ANON_KEY = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const CONFIG_OK = !SUPABASE_URL.includes('xxxx') && !SUPABASE_ANON_KEY.includes('xxxx');
+let supabase = null;
+try {
+  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+} catch (err) {
+  console.error('Gagal membuat client Supabase:', err);
+}
+
+// Cek konfigurasi: pesan jelas jika URL/key belum diisi atau salah
+function cekKonfigurasi() {
+  if (!supabase || !CONFIG_OK) {
+    showToast('Konfigurasi Supabase belum benar. Isi SUPABASE_URL dan SUPABASE_ANON_KEY di app.js.', 'error');
+    return false;
+  }
+  return true;
+}
 
 const BUCKET_FOTO = 'foto-mesin';
 
@@ -69,6 +84,7 @@ document.querySelectorAll('#auth-tabs .nav-link').forEach(tab => {
 
 document.getElementById('form-login').addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (!cekKonfigurasi()) return;
   const email = document.getElementById('login-email').value;
   const password = document.getElementById('login-password').value;
   await callSupabase(supabase.auth.signInWithPassword({ email, password }));
@@ -76,13 +92,13 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
 
 document.getElementById('form-signup').addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (!cekKonfigurasi()) return;
   const nama = document.getElementById('signup-nama').value;
-  const role = document.getElementById('signup-role').value;
   const email = document.getElementById('signup-email').value;
   const password = document.getElementById('signup-password').value;
   const result = await callSupabase(
-    supabase.auth.signUp({ email, password, options: { data: { nama, role } } }),
-    'Pendaftaran berhasil! Silakan cek email untuk verifikasi, lalu masuk.'
+    supabase.auth.signUp({ email, password, options: { data: { nama } } }),
+    'Pendaftaran berhasil! Jika diminta verifikasi, cek email dulu, lalu masuk.'
   );
   if (result.success) {
     document.querySelector('#auth-tabs .nav-link[data-tab="login"]').click();
@@ -93,15 +109,17 @@ document.getElementById('btn-logout').addEventListener('click', async () => {
   await supabase.auth.signOut();
 });
 
-supabase.auth.onAuthStateChange((event, session) => {
-  if (session) {
-    initAppForUser(session.user.id);
-  } else {
-    currentProfile = null;
-    document.getElementById('app-shell').classList.add('d-none');
-    document.getElementById('section-login').classList.remove('d-none');
-  }
-});
+if (supabase && CONFIG_OK) {
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (session) {
+      initAppForUser(session.user.id);
+    } else {
+      currentProfile = null;
+      document.getElementById('app-shell').classList.add('d-none');
+      document.getElementById('section-login').classList.remove('d-none');
+    }
+  });
+}
 
 async function initAppForUser(userId) {
   const result = await callSupabase(
