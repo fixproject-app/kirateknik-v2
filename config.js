@@ -7,6 +7,6 @@
 // ============================================================
 window.KIRA_CONFIG = {
   SUPABASE_URL: 'https://potjecpcedeajvugbcla.supabase.co',
-  SUPABASE_ANON_KEY: 'sb_publishable_j4V6keWo2jXsR25DAXj5-g_3V58y9qw'
+  SUPABASE_ANON_KEY: 'sb_publishable_j4V6keWo2jXsR25DAXj5-g_3V58y9qw',
   FUNGSI_AKUN: 'hyper-function'
 };
