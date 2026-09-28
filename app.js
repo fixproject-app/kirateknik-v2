@@ -2,12 +2,13 @@
 // Kira Teknik — app.js
 // ============================================================
 
-// ── Konfigurasi Supabase ──
-// Isi dengan Project URL dan anon public key dari Supabase Dashboard > Project Settings > API
-const SUPABASE_URL = 'https://potjecpcedeajvugbcla.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_j4V6keWo2jXsR25DAXj5-g_3V58y9qw';
+// ── Konfigurasi Supabase dibaca dari config.js (diisi sekali saja di file itu) ──
+const _cfg = window.KIRA_CONFIG || {};
+const SUPABASE_URL = _cfg.SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = _cfg.SUPABASE_ANON_KEY || '';
 
-const CONFIG_OK = !SUPABASE_URL.includes('xxxx') && !SUPABASE_ANON_KEY.includes('xxxx');
+const CONFIG_OK = Boolean(SUPABASE_URL) && Boolean(SUPABASE_ANON_KEY)
+  && !SUPABASE_URL.includes('xxxx') && !SUPABASE_ANON_KEY.includes('xxxx');
 let sb = null;
 try {
   sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -18,7 +19,7 @@ try {
 // Cek konfigurasi: pesan jelas jika URL/key belum diisi atau salah
 function cekKonfigurasi() {
   if (!sb || !CONFIG_OK) {
-    showToast('Konfigurasi Supabase belum benar. Isi SUPABASE_URL dan SUPABASE_ANON_KEY di app.js.', 'error');
+    showToast('Konfigurasi Supabase belum benar. Isi SUPABASE_URL dan SUPABASE_ANON_KEY di config.js.', 'error');
     return false;
   }
   return true;
@@ -109,12 +110,20 @@ document.getElementById('btn-logout').addEventListener('click', async () => {
   await sb.auth.signOut();
 });
 
+let initializedUserId = null;
+
 if (sb && CONFIG_OK) {
   sb.auth.onAuthStateChange((event, session) => {
     if (session) {
-      initAppForUser(session.user.id);
+      // Supabase memicu event ini lagi setiap halaman kembali aktif (mis. selesai memakai kamera).
+      // Jika user-nya sama, abaikan agar halaman yang sedang dibuka tidak berpindah ke Dashboard.
+      if (initializedUserId === session.user.id) return;
+      initializedUserId = session.user.id;
+      setTimeout(() => initAppForUser(session.user.id), 0);
     } else {
+      initializedUserId = null;
       currentProfile = null;
+      if (realtimeChannel) { sb.removeChannel(realtimeChannel); realtimeChannel = null; }
       document.getElementById('app-shell').classList.add('d-none');
       document.getElementById('section-login').classList.remove('d-none');
     }
@@ -133,7 +142,14 @@ async function initAppForUser(userId) {
   document.getElementById('user-info').textContent = `${currentProfile.nama} (${currentProfile.role})`;
 
   await loadAllReferenceData();
-  navigateTo('dashboard');
+
+  let tersimpan = null;
+  try { tersimpan = sessionStorage.getItem('kt_section'); } catch (_) {}
+  const tujuan = ['dashboard', 'mesin', 'tahap', 'sparepart'].includes(tersimpan) ? tersimpan : 'dashboard';
+  navigateTo(tujuan);
+  if (tujuan === 'mesin' && restoreDraftMesin()) {
+    showToast('Halaman sempat dimuat ulang oleh HP. Isian dipulihkan, silakan ambil fotonya lagi.', 'success');
+  }
   setupRealtime();
 }
 
@@ -157,6 +173,7 @@ const SECTION_TITLES = {
 };
 
 function navigateTo(sectionId) {
+  try { sessionStorage.setItem('kt_section', sectionId); } catch (_) {}
   document.querySelectorAll('.app-content-section').forEach(el => el.classList.add('d-none'));
   document.getElementById(`section-${sectionId}`)?.classList.remove('d-none');
   document.querySelectorAll('.sidebar .nav-link').forEach(el => el.classList.remove('active'));
@@ -264,30 +281,82 @@ document.getElementById('filter-mesin').addEventListener('input', () => loadDash
 // ============================================================
 // FORM: TAMBAH MESIN
 // ============================================================
+let fotoTerpilih = null;
+const DRAFT_KEY = 'kt_draft_mesin';
+
 function resetFormMesin() {
   document.getElementById('form-mesin').reset();
-  document.getElementById('mesin-foto-preview').classList.add('d-none');
+  setFotoMesin(null);
   document.getElementById('mesin-tanggal').value = new Date().toISOString().slice(0, 10);
 }
 
-document.getElementById('mesin-foto').addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+// Menampilkan / menghapus foto yang dipilih (dari kamera maupun galeri)
+function setFotoMesin(file) {
+  fotoTerpilih = file;
   const preview = document.getElementById('mesin-foto-preview');
-  preview.src = URL.createObjectURL(file);
-  preview.classList.remove('d-none');
+  const btnHapus = document.getElementById('btn-foto-hapus');
+  if (preview.dataset.url) URL.revokeObjectURL(preview.dataset.url);
+  if (file) {
+    const url = URL.createObjectURL(file);
+    preview.src = url;
+    preview.dataset.url = url;
+    preview.classList.remove('d-none');
+    btnHapus.classList.remove('d-none');
+  } else {
+    preview.removeAttribute('src');
+    preview.dataset.url = '';
+    preview.classList.add('d-none');
+    btnHapus.classList.add('d-none');
+    document.getElementById('mesin-foto-kamera').value = '';
+    document.getElementById('mesin-foto-galeri').value = '';
+  }
+}
+
+document.getElementById('btn-foto-kamera').addEventListener('click', () => document.getElementById('mesin-foto-kamera').click());
+document.getElementById('btn-foto-galeri').addEventListener('click', () => document.getElementById('mesin-foto-galeri').click());
+document.getElementById('btn-foto-hapus').addEventListener('click', () => setFotoMesin(null));
+['mesin-foto-kamera', 'mesin-foto-galeri'].forEach(id => {
+  document.getElementById(id).addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) setFotoMesin(file);
+  });
 });
+
+// Draft isian teks: berjaga-jaga jika HP memuat ulang halaman saat kamera dibuka
+function simpanDraftMesin() {
+  try {
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+      nama: document.getElementById('mesin-nama').value,
+      harga: document.getElementById('mesin-harga').value,
+      tanggal: document.getElementById('mesin-tanggal').value,
+    }));
+  } catch (_) {}
+}
+function restoreDraftMesin() {
+  try {
+    const raw = sessionStorage.getItem(DRAFT_KEY);
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    document.getElementById('mesin-nama').value = d.nama || '';
+    document.getElementById('mesin-harga').value = d.harga || '';
+    if (d.tanggal) document.getElementById('mesin-tanggal').value = d.tanggal;
+    return Boolean(d.nama || d.harga);
+  } catch (_) { return false; }
+}
+['mesin-nama', 'mesin-harga', 'mesin-tanggal'].forEach(id =>
+  document.getElementById(id).addEventListener('input', simpanDraftMesin));
 
 document.getElementById('form-mesin').addEventListener('submit', async (e) => {
   e.preventDefault();
   const namaMesin = document.getElementById('mesin-nama').value;
   const hargaBeli = document.getElementById('mesin-harga').value;
   const tanggalBeli = document.getElementById('mesin-tanggal').value;
-  const fotoFile = document.getElementById('mesin-foto').files[0];
+  const fotoFile = fotoTerpilih;
 
   let fotoUrl = null;
   if (fotoFile) {
-    const path = `${currentProfile.id}/${Date.now()}_${fotoFile.name}`;
+    const namaAman = (fotoFile.name || 'foto.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const path = `${currentProfile.id}/${Date.now()}_${namaAman}`;
     const uploadResult = await callSupabase(sb.storage.from(BUCKET_FOTO).upload(path, fotoFile));
     if (!uploadResult.success) return;
     fotoUrl = sb.storage.from(BUCKET_FOTO).getPublicUrl(path).data.publicUrl;
@@ -304,6 +373,7 @@ document.getElementById('form-mesin').addEventListener('submit', async (e) => {
     'Mesin berhasil ditambahkan.'
   );
   if (result.success) {
+    try { sessionStorage.removeItem(DRAFT_KEY); } catch (_) {}
     await loadAllReferenceData();
     resetFormMesin();
     navigateTo('dashboard');
@@ -342,34 +412,41 @@ document.getElementById('btn-tambah-sparepart-row').addEventListener('click', ()
 
 function addSparepartRow() {
   sparepartRowCount++;
-  const rowId = `sp-row-${sparepartRowCount}`;
   const wrapper = document.createElement('div');
   wrapper.className = 'sparepart-row';
-  wrapper.id = rowId;
+  wrapper.id = `sp-row-${sparepartRowCount}`;
   wrapper.innerHTML = `
-    <select class="form-select form-select-sm sp-select" style="flex:2">
-      <option value="">-- Manual / Tidak ada di katalog --</option>
+    <select class="form-select form-select-sm sp-select">
+      <option value="">-- Pilih sparepart --</option>
       ${cachedSparepart.map(s => `<option value="${s.id}" data-harga="${s.harga}">${s.nama_sparepart} (${formatRupiah(s.harga)})</option>`).join('')}
+      <option value="__manual__">Tidak ada di katalog (isi catatan)</option>
     </select>
-    <input type="text" class="form-control form-control-sm sp-nama-manual d-none" placeholder="Nama sparepart" style="flex:1.5" />
-    <input type="number" min="0" step="500" class="form-control form-control-sm sp-harga" placeholder="Harga" style="flex:1" />
+    <input type="text" class="form-control form-control-sm sp-catatan d-none" placeholder="Catatan: tulis nama sparepart" />
+    <input type="number" min="0" step="500" class="form-control form-control-sm sp-harga" placeholder="Harga (Rp)" readonly />
     <button type="button" class="btn btn-outline-danger btn-sm btn-remove-row"><i class="bi bi-x-lg"></i></button>
   `;
   document.getElementById('list-sparepart-tahap').appendChild(wrapper);
 
   const select = wrapper.querySelector('.sp-select');
-  const manualInput = wrapper.querySelector('.sp-nama-manual');
+  const catatanInput = wrapper.querySelector('.sp-catatan');
   const hargaInput = wrapper.querySelector('.sp-harga');
 
   select.addEventListener('change', () => {
-    const opt = select.selectedOptions[0];
     if (select.value === '') {
-      manualInput.classList.remove('d-none');
+      // belum memilih
+      catatanInput.classList.add('d-none');
+      hargaInput.value = '';
+      hargaInput.readOnly = true;
+    } else if (select.value === '__manual__') {
+      // tidak ada di katalog: mekanik menulis nama di catatan dan mengisi harga sendiri
+      catatanInput.classList.remove('d-none');
       hargaInput.value = '';
       hargaInput.readOnly = false;
+      catatanInput.focus();
     } else {
-      manualInput.classList.add('d-none');
-      hargaInput.value = opt.dataset.harga;
+      // dari katalog: harga terisi otomatis
+      catatanInput.classList.add('d-none');
+      hargaInput.value = select.selectedOptions[0].dataset.harga;
       hargaInput.readOnly = true;
     }
     updateTahapTotalPreview();
@@ -402,6 +479,23 @@ document.getElementById('form-tahap').addEventListener('submit', async (e) => {
 
   if (!mesinId) { showToast('Pilih mesin terlebih dahulu.', 'error'); return; }
 
+  // Kumpulkan & validasi sparepart dulu sebelum menyimpan apa pun
+  const sparepartRows = [];
+  let pesanError = null;
+  document.querySelectorAll('#list-sparepart-tahap .sparepart-row').forEach(row => {
+    const pilihan = row.querySelector('.sp-select').value;
+    const catatan = row.querySelector('.sp-catatan').value.trim();
+    const harga = Number(row.querySelector('.sp-harga').value) || 0;
+    if (pilihan === '') return; // baris belum dipilih, lewati
+    if (pilihan === '__manual__') {
+      if (!catatan) { pesanError = 'Isi catatan (nama sparepart) untuk sparepart yang tidak ada di katalog.'; return; }
+      sparepartRows.push({ sparepart_id: null, nama_manual: catatan, harga_manual: harga, harga_terpakai: harga });
+    } else {
+      sparepartRows.push({ sparepart_id: pilihan, nama_manual: null, harga_manual: null, harga_terpakai: harga });
+    }
+  });
+  if (pesanError) { showToast(pesanError, 'error'); return; }
+
   const tahapResult = await callSupabase(
     sb.from('tahap_restorasi').insert({
       mesin_id: mesinId,
@@ -414,24 +508,9 @@ document.getElementById('form-tahap').addEventListener('submit', async (e) => {
   if (!tahapResult.success) return;
 
   const tahapId = tahapResult.data.id;
-  const sparepartRows = [];
-  document.querySelectorAll('#list-sparepart-tahap .sparepart-row').forEach(row => {
-    const select = row.querySelector('.sp-select');
-    const manualInput = row.querySelector('.sp-nama-manual');
-    const hargaInput = row.querySelector('.sp-harga');
-    const harga = Number(hargaInput.value) || 0;
-    if (!select.value && !manualInput.value) return; // baris kosong, lewati
-    sparepartRows.push({
-      tahap_id: tahapId,
-      sparepart_id: select.value || null,
-      nama_manual: select.value ? null : manualInput.value,
-      harga_manual: select.value ? null : harga,
-      harga_terpakai: harga,
-    });
-  });
 
   if (sparepartRows.length > 0) {
-    const spResult = await callSupabase(sb.from('tahap_sparepart').insert(sparepartRows));
+    const spResult = await callSupabase(sb.from('tahap_sparepart').insert(sparepartRows.map(r => ({ ...r, tahap_id: tahapId }))));
     if (!spResult.success) return;
   }
 
@@ -512,7 +591,7 @@ async function loadRekapMesin(mesinId) {
     const sparepartHtml = (t.tahap_sparepart || []).map(sp => {
       const nama = sp.sparepart_id
         ? (cachedSparepart.find(s => s.id === sp.sparepart_id) || {}).nama_sparepart || '-'
-        : sp.nama_manual;
+        : `${sp.nama_manual} (catatan)`;
       return `<li>${nama} — ${formatRupiah(sp.harga_terpakai)}</li>`;
     }).join('');
     return `
@@ -553,8 +632,11 @@ window.openFotoModal = openFotoModal;
 // ============================================================
 // REALTIME — Owner langsung melihat update tanpa reload
 // ============================================================
+let realtimeChannel = null;
+
 function setupRealtime() {
-  sb
+  if (realtimeChannel) sb.removeChannel(realtimeChannel);
+  realtimeChannel = sb
     .channel('realtime:kira-teknik')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tahap_restorasi' }, handleRealtimeChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tahap_sparepart' }, handleRealtimeChange)
