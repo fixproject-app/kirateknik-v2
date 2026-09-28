@@ -4,8 +4,8 @@
 
 // ── Konfigurasi Supabase ──
 // Isi dengan Project URL dan anon public key dari Supabase Dashboard > Project Settings > API
-const SUPABASE_URL = 'https://xxxxxxxxxxxx.supabase.co';
-const SUPABASE_ANON_KEY = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+const SUPABASE_URL = 'https://potjecpcedeajvugbcla.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_j4V6keWo2jXsR25DAXj5-g_3V58y9qw';
 
 const CONFIG_OK = !SUPABASE_URL.includes('xxxx') && !SUPABASE_ANON_KEY.includes('xxxx');
 let supabase = null;
