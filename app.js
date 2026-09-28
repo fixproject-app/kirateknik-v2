@@ -8,16 +8,16 @@ const SUPABASE_URL = 'https://potjecpcedeajvugbcla.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_j4V6keWo2jXsR25DAXj5-g_3V58y9qw';
 
 const CONFIG_OK = !SUPABASE_URL.includes('xxxx') && !SUPABASE_ANON_KEY.includes('xxxx');
-let supabase = null;
+let sb = null;
 try {
-  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 } catch (err) {
   console.error('Gagal membuat client Supabase:', err);
 }
 
 // Cek konfigurasi: pesan jelas jika URL/key belum diisi atau salah
 function cekKonfigurasi() {
-  if (!supabase || !CONFIG_OK) {
+  if (!sb || !CONFIG_OK) {
     showToast('Konfigurasi Supabase belum benar. Isi SUPABASE_URL dan SUPABASE_ANON_KEY di app.js.', 'error');
     return false;
   }
@@ -87,7 +87,7 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
   if (!cekKonfigurasi()) return;
   const email = document.getElementById('login-email').value;
   const password = document.getElementById('login-password').value;
-  await callSupabase(supabase.auth.signInWithPassword({ email, password }));
+  await callSupabase(sb.auth.signInWithPassword({ email, password }));
 });
 
 document.getElementById('form-signup').addEventListener('submit', async (e) => {
@@ -97,7 +97,7 @@ document.getElementById('form-signup').addEventListener('submit', async (e) => {
   const email = document.getElementById('signup-email').value;
   const password = document.getElementById('signup-password').value;
   const result = await callSupabase(
-    supabase.auth.signUp({ email, password, options: { data: { nama } } }),
+    sb.auth.signUp({ email, password, options: { data: { nama } } }),
     'Pendaftaran berhasil! Jika diminta verifikasi, cek email dulu, lalu masuk.'
   );
   if (result.success) {
@@ -106,11 +106,11 @@ document.getElementById('form-signup').addEventListener('submit', async (e) => {
 });
 
 document.getElementById('btn-logout').addEventListener('click', async () => {
-  await supabase.auth.signOut();
+  await sb.auth.signOut();
 });
 
-if (supabase && CONFIG_OK) {
-  supabase.auth.onAuthStateChange((event, session) => {
+if (sb && CONFIG_OK) {
+  sb.auth.onAuthStateChange((event, session) => {
     if (session) {
       initAppForUser(session.user.id);
     } else {
@@ -123,7 +123,7 @@ if (supabase && CONFIG_OK) {
 
 async function initAppForUser(userId) {
   const result = await callSupabase(
-    supabase.from('profiles').select('*').eq('id', userId).single()
+    sb.from('profiles').select('*').eq('id', userId).single()
   );
   if (!result.success) return;
 
@@ -198,9 +198,9 @@ function toggleDarkMode() {
 // ============================================================
 async function loadAllReferenceData() {
   const [mesinRes, sparepartRes, profilesRes] = await Promise.all([
-    supabase.from('mesin').select('*').order('created_at', { ascending: false }),
-    supabase.from('sparepart').select('*').order('nama_sparepart', { ascending: true }),
-    supabase.from('profiles').select('*').order('nama', { ascending: true }),
+    sb.from('mesin').select('*').order('created_at', { ascending: false }),
+    sb.from('sparepart').select('*').order('nama_sparepart', { ascending: true }),
+    sb.from('profiles').select('*').order('nama', { ascending: true }),
   ]);
   cachedMesin = mesinRes.data || [];
   cachedSparepart = sparepartRes.data || [];
@@ -212,7 +212,7 @@ async function loadAllReferenceData() {
 // ============================================================
 async function loadDashboardData() {
   const result = await callSupabase(
-    supabase.from('v_rekap_mesin').select('*').order('nama_mesin', { ascending: true })
+    sb.from('v_rekap_mesin').select('*').order('nama_mesin', { ascending: true })
   );
   if (!result.success) return;
 
@@ -288,13 +288,13 @@ document.getElementById('form-mesin').addEventListener('submit', async (e) => {
   let fotoUrl = null;
   if (fotoFile) {
     const path = `${currentProfile.id}/${Date.now()}_${fotoFile.name}`;
-    const uploadResult = await callSupabase(supabase.storage.from(BUCKET_FOTO).upload(path, fotoFile));
+    const uploadResult = await callSupabase(sb.storage.from(BUCKET_FOTO).upload(path, fotoFile));
     if (!uploadResult.success) return;
-    fotoUrl = supabase.storage.from(BUCKET_FOTO).getPublicUrl(path).data.publicUrl;
+    fotoUrl = sb.storage.from(BUCKET_FOTO).getPublicUrl(path).data.publicUrl;
   }
 
   const result = await callSupabase(
-    supabase.from('mesin').insert({
+    sb.from('mesin').insert({
       nama_mesin: namaMesin,
       harga_beli: hargaBeli,
       tanggal_pembelian: tanggalBeli,
@@ -403,7 +403,7 @@ document.getElementById('form-tahap').addEventListener('submit', async (e) => {
   if (!mesinId) { showToast('Pilih mesin terlebih dahulu.', 'error'); return; }
 
   const tahapResult = await callSupabase(
-    supabase.from('tahap_restorasi').insert({
+    sb.from('tahap_restorasi').insert({
       mesin_id: mesinId,
       mekanik_id: mekanikId,
       tanggal_pengerjaan: tanggal,
@@ -431,7 +431,7 @@ document.getElementById('form-tahap').addEventListener('submit', async (e) => {
   });
 
   if (sparepartRows.length > 0) {
-    const spResult = await callSupabase(supabase.from('tahap_sparepart').insert(sparepartRows));
+    const spResult = await callSupabase(sb.from('tahap_sparepart').insert(sparepartRows));
     if (!spResult.success) return;
   }
 
@@ -448,7 +448,7 @@ document.getElementById('form-sparepart-baru').addEventListener('submit', async 
   const nama = document.getElementById('sparepart-nama').value;
   const harga = document.getElementById('sparepart-harga').value;
   const result = await callSupabase(
-    supabase.from('sparepart').insert({ nama_sparepart: nama, harga }),
+    sb.from('sparepart').insert({ nama_sparepart: nama, harga }),
     'Sparepart berhasil ditambahkan.'
   );
   if (result.success) {
@@ -479,8 +479,8 @@ document.getElementById('btn-kembali-dashboard').addEventListener('click', () =>
 
 async function loadRekapMesin(mesinId) {
   const [mesinRes, tahapRes] = await Promise.all([
-    supabase.from('mesin').select('*').eq('id', mesinId).single(),
-    supabase.from('tahap_restorasi')
+    sb.from('mesin').select('*').eq('id', mesinId).single(),
+    sb.from('tahap_restorasi')
       .select('*, tahap_sparepart(*)')
       .eq('mesin_id', mesinId)
       .order('tanggal_pengerjaan', { ascending: false }),
@@ -554,7 +554,7 @@ window.openFotoModal = openFotoModal;
 // REALTIME — Owner langsung melihat update tanpa reload
 // ============================================================
 function setupRealtime() {
-  supabase
+  sb
     .channel('realtime:kira-teknik')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tahap_restorasi' }, handleRealtimeChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tahap_sparepart' }, handleRealtimeChange)
