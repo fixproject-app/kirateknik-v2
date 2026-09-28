@@ -74,6 +74,7 @@ function formatRupiah(angka) {
 // ============================================================
 // AUTH
 // ============================================================
+const NAMA_FUNGSI_AKUN = _cfg.FUNGSI_AKUN || 'kelola-akun';
 const LOGIN_DOMAIN = _cfg.LOGIN_DOMAIN || 'kirateknik.app';
 function usernameKeEmail(input) {
   const v = String(input || '').trim().toLowerCase();
@@ -560,10 +561,10 @@ document.getElementById('form-mekanik-baru').addEventListener('submit', async (e
 async function panggilKelolaAkun(body, pesanSukses) {
   showLoading();
   try {
-    const { data, error } = await sb.functions.invoke('kelola-akun', { body });
+    const { data, error } = await sb.functions.invoke(NAMA_FUNGSI_AKUN, { body });
     if (error) {
       let msg = error.message;
-      if (error.name === 'FunctionsFetchError') msg = 'Edge Function "kelola-akun" tidak bisa dihubungi. Pastikan sudah di-deploy dan pengaturan Verify JWT dimatikan.';
+      if (error.name === 'FunctionsFetchError') msg = `Edge Function "${NAMA_FUNGSI_AKUN}" tidak bisa dihubungi. Pastikan sudah di-deploy dan Verify JWT dimatikan.`;
       try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch (_) {}
       throw new Error(msg);
     }
