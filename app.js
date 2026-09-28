@@ -213,56 +213,61 @@ async function loadAllReferenceData() {
 // ============================================================
 // DASHBOARD
 // ============================================================
+const STATUS_LABEL = { masuk: 'Mesin Masuk', restorasi: 'Dalam Restorasi', ready: 'Mesin Ready', terjual: 'Mesin Terjual' };
+let dashboardRows = [];
+let statusAktif = 'restorasi';
+
+// Masuk/Dalam Restorasi otomatis dari ada-tidaknya tahap; Ready/Terjual ditandai manual oleh Owner
+function statusMesin(r) {
+  if (r.status_manual) return r.status_manual;
+  return Number(r.jumlah_tahap) > 0 ? 'restorasi' : 'masuk';
+}
+function biayaRestorasi(r) { return Number(r.total_ongkos_kerja) + Number(r.total_sparepart); }
+
 async function loadDashboardData() {
-  const result = await callSupabase(
-    sb.from('v_rekap_mesin').select('*').order('nama_mesin', { ascending: true })
-  );
+  const result = await callSupabase(sb.from('v_rekap_mesin').select('*').order('nama_mesin', { ascending: true }));
   if (!result.success) return;
+  dashboardRows = result.data;
 
-  const rows = result.data;
-  const totalMesin = rows.length;
-  const totalBiaya = rows.reduce((s, r) => s + Number(r.total_ongkos_kerja) + Number(r.total_sparepart), 0);
-  const totalTahap = rows.reduce((s, r) => s + Number(r.jumlah_tahap), 0);
+  document.getElementById('kpi-total-mesin').textContent = dashboardRows.length;
+  document.getElementById('kpi-total-biaya').textContent = formatRupiah(dashboardRows.reduce((s, r) => s + biayaRestorasi(r), 0));
+  document.getElementById('kpi-total-tahap').textContent = dashboardRows.reduce((s, r) => s + Number(r.jumlah_tahap), 0);
 
-  document.getElementById('kpi-total-mesin').textContent = totalMesin;
-  document.getElementById('kpi-total-biaya').textContent = formatRupiah(totalBiaya);
-  document.getElementById('kpi-total-tahap').textContent = totalTahap;
-
-  const termahal = [...rows].sort((a, b) =>
-    (Number(b.total_ongkos_kerja) + Number(b.total_sparepart)) - (Number(a.total_ongkos_kerja) + Number(a.total_sparepart))
-  )[0];
+  const termahal = [...dashboardRows].sort((a, b) => biayaRestorasi(b) - biayaRestorasi(a))[0];
   document.getElementById('ai-insight').textContent = termahal
-    ? `Mesin dengan biaya restorasi tertinggi saat ini: "${termahal.nama_mesin}" sebesar ${formatRupiah(Number(termahal.total_ongkos_kerja) + Number(termahal.total_sparepart))}.`
+    ? `Mesin dengan biaya restorasi tertinggi saat ini: "${termahal.nama_mesin}" sebesar ${formatRupiah(biayaRestorasi(termahal))}.`
     : 'Belum ada data mesin untuk dianalisis.';
-
-  renderMesinGrid(rows);
+  renderMesinGrid();
 }
 
-function renderMesinGrid(rows) {
-  const grid = document.getElementById('grid-mesin');
-  const keyword = (document.getElementById('filter-mesin').value || '').toLowerCase();
-  const filtered = rows.filter(r => r.nama_mesin.toLowerCase().includes(keyword));
+function renderMesinGrid() {
+  const hitung = { masuk: 0, restorasi: 0, ready: 0, terjual: 0 };
+  dashboardRows.forEach(r => hitung[statusMesin(r)]++);
+  const tabs = document.getElementById('status-tabs');
+  tabs.innerHTML = Object.keys(STATUS_LABEL).map(k =>
+    `<button type="button" class="status-tab ${k === statusAktif ? 'active' : ''}" data-status="${k}">${STATUS_LABEL[k]} <span class="status-count">${hitung[k]}</span></button>`).join('');
+  tabs.querySelectorAll('.status-tab').forEach(b => b.addEventListener('click', () => { statusAktif = b.dataset.status; renderMesinGrid(); }));
 
-  grid.innerHTML = filtered.map(r => {
-    const total = Number(r.total_ongkos_kerja) + Number(r.total_sparepart);
-    const fotoEl = r.foto_url
-      ? `<img src="${r.foto_url}" alt="${r.nama_mesin}" />`
-      : `<div class="no-foto"><i class="bi bi-image"></i></div>`;
+  const keyword = (document.getElementById('filter-mesin').value || '').toLowerCase();
+  const rows = dashboardRows.filter(r => statusMesin(r) === statusAktif && r.nama_mesin.toLowerCase().includes(keyword));
+  const grid = document.getElementById('grid-mesin');
+  grid.innerHTML = rows.map(r => {
+    const restorasi = biayaRestorasi(r);
+    const fotoEl = r.foto_url ? `<img src="${r.foto_url}" alt="${r.nama_mesin}" />` : `<div class="no-foto"><i class="bi bi-image"></i></div>`;
     return `
       <div class="mesin-card" data-id="${r.mesin_id}">
         ${fotoEl}
         <div class="mesin-card-body">
           <div class="mesin-card-name">${r.nama_mesin}</div>
-          <div class="mesin-card-total">${formatRupiah(total)}</div>
+          <div class="mesin-card-line"><span>Harga Beli</span><span>${formatRupiah(r.harga_beli)}</span></div>
+          <div class="mesin-card-line"><span>Total Restorasi</span><span>${formatRupiah(restorasi)}</span></div>
+          <div class="mesin-card-line hpp"><span>Total HPP</span><span>${formatRupiah(Number(r.harga_beli) + restorasi)}</span></div>
         </div>
       </div>`;
-  }).join('') || '<p class="text-muted">Belum ada mesin.</p>';
-
-  grid.querySelectorAll('.mesin-card').forEach(card => {
-    card.addEventListener('click', () => openRekapMesin(card.dataset.id));
-  });
+  }).join('') || '<p class="text-muted">Tidak ada mesin di kelompok ini.</p>';
+  grid.querySelectorAll('.mesin-card').forEach(card => card.addEventListener('click', () => openRekapMesin(card.dataset.id)));
 }
-document.getElementById('filter-mesin').addEventListener('input', () => loadDashboardData());
+document.getElementById('filter-mesin').addEventListener('input', renderMesinGrid);
 
 // ============================================================
 // FORM: TAMBAH MESIN
@@ -714,6 +719,18 @@ async function loadRekapMesin(mesinId) {
   }).join('') || '<p class="text-muted">Belum ada tahap restorasi untuk mesin ini.</p>';
 
   document.getElementById('rekap-total').textContent = formatRupiah(totalBiaya);
+  document.getElementById('rekap-hpp').textContent = formatRupiah(Number(mesin.harga_beli) + totalBiaya);
+
+  const statusSekarang = mesin.status_manual || (tahapList.length > 0 ? 'restorasi' : 'masuk');
+  const tombol = ['ready', 'terjual'].filter(s => s !== mesin.status_manual)
+    .map(s => `<button class="btn btn-outline-primary btn-sm" data-set-status="${s}">Tandai ${STATUS_LABEL[s].replace('Mesin ', '')}</button>`);
+  if (mesin.status_manual) tombol.push('<button class="btn btn-outline-secondary btn-sm" data-set-status="">Kembalikan ke otomatis</button>');
+  document.getElementById('rekap-status').innerHTML =
+    `<div class="mb-2">Status: <strong>${STATUS_LABEL[statusSekarang]}</strong></div><div class="d-flex flex-wrap gap-2">${tombol.join('')}</div>`;
+  document.querySelectorAll('[data-set-status]').forEach(b => b.addEventListener('click', async () => {
+    const r = await callSupabase(sb.from('mesin').update({ status_manual: b.dataset.setStatus || null }).eq('id', mesinId), 'Status mesin diperbarui.');
+    if (r.success) loadRekapMesin(mesinId);
+  }));
   document.getElementById('rekap-jumlah-tahap').textContent = tahapList.length;
   document.getElementById('rekap-tahap-list').innerHTML = rowsHtml;
 }
