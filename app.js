@@ -31,6 +31,7 @@ let currentProfile = null;
 let cachedMesin = [];
 let cachedSparepart = [];
 let cachedProfiles = [];
+let cachedMekanik = [];
 let sparepartRowCount = 0;
 let currentRekapMesinId = null;
 
@@ -73,37 +74,18 @@ function formatRupiah(angka) {
 // ============================================================
 // AUTH
 // ============================================================
-document.querySelectorAll('#auth-tabs .nav-link').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('#auth-tabs .nav-link').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    const target = tab.dataset.tab;
-    document.getElementById('form-login').classList.toggle('d-none', target !== 'login');
-    document.getElementById('form-signup').classList.toggle('d-none', target !== 'signup');
-  });
-});
+const LOGIN_DOMAIN = _cfg.LOGIN_DOMAIN || 'kirateknik.app';
+function usernameKeEmail(input) {
+  const v = String(input || '').trim().toLowerCase();
+  return v.includes('@') ? v : `${v}@${LOGIN_DOMAIN}`;
+}
 
 document.getElementById('form-login').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!cekKonfigurasi()) return;
-  const email = document.getElementById('login-email').value;
+  const email = usernameKeEmail(document.getElementById('login-email').value);
   const password = document.getElementById('login-password').value;
   await callSupabase(sb.auth.signInWithPassword({ email, password }));
-});
-
-document.getElementById('form-signup').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (!cekKonfigurasi()) return;
-  const nama = document.getElementById('signup-nama').value;
-  const email = document.getElementById('signup-email').value;
-  const password = document.getElementById('signup-password').value;
-  const result = await callSupabase(
-    sb.auth.signUp({ email, password, options: { data: { nama } } }),
-    'Pendaftaran berhasil! Jika diminta verifikasi, cek email dulu, lalu masuk.'
-  );
-  if (result.success) {
-    document.querySelector('#auth-tabs .nav-link[data-tab="login"]').click();
-  }
 });
 
 document.getElementById('btn-logout').addEventListener('click', async () => {
@@ -131,21 +113,22 @@ if (sb && CONFIG_OK) {
 }
 
 async function initAppForUser(userId) {
-  const result = await callSupabase(
-    sb.from('profiles').select('*').eq('id', userId).single()
-  );
+  const result = await callSupabase(sb.from('profiles').select('*').eq('id', userId).single());
   if (!result.success) return;
 
   currentProfile = result.data;
+  const isOwner = currentProfile.role === 'owner';
   document.getElementById('section-login').classList.add('d-none');
   document.getElementById('app-shell').classList.remove('d-none');
-  document.getElementById('user-info').textContent = `${currentProfile.nama} (${currentProfile.role})`;
+  document.getElementById('user-info').textContent = `${currentProfile.username || currentProfile.nama} (${currentProfile.role})`;
+  document.querySelectorAll('[data-owner-only]').forEach(el => el.classList.toggle('d-none', !isOwner));
 
   await loadAllReferenceData();
 
   let tersimpan = null;
   try { tersimpan = sessionStorage.getItem('kt_section'); } catch (_) {}
-  const tujuan = ['dashboard', 'mesin', 'tahap', 'sparepart'].includes(tersimpan) ? tersimpan : 'dashboard';
+  const boleh = isOwner ? ['dashboard', 'mesin', 'tahap', 'sparepart', 'mekanik', 'akun'] : MEKANIK_SECTIONS;
+  const tujuan = boleh.includes(tersimpan) ? tersimpan : (isOwner ? 'dashboard' : 'tahap');
   navigateTo(tujuan);
   if (tujuan === 'mesin' && restoreDraftMesin()) {
     showToast('Halaman sempat dimuat ulang oleh HP. Isian dipulihkan, silakan ambil fotonya lagi.', 'success');
@@ -165,14 +148,14 @@ document.querySelectorAll('.sidebar .nav-link').forEach(link => {
 });
 
 const SECTION_TITLES = {
-  dashboard: 'Dashboard',
-  mesin: 'Tambah Mesin',
-  tahap: 'Tambah Tahap Restorasi',
-  sparepart: 'Katalog Sparepart',
-  rekap: 'Rekap Biaya Mesin',
+  dashboard: 'Dashboard', mesin: 'Tambah Mesin', tahap: 'Tambah Tahap Restorasi',
+  sparepart: 'Katalog Sparepart', rekap: 'Rekap Biaya Mesin', mekanik: 'Master Mekanik', akun: 'Kelola Akun',
 };
+const MEKANIK_SECTIONS = ['tahap', 'sparepart'];
 
 function navigateTo(sectionId) {
+  // Mekanik hanya boleh membuka halaman input
+  if (currentProfile && currentProfile.role !== 'owner' && !MEKANIK_SECTIONS.includes(sectionId)) sectionId = 'tahap';
   try { sessionStorage.setItem('kt_section', sectionId); } catch (_) {}
   document.querySelectorAll('.app-content-section').forEach(el => el.classList.add('d-none'));
   document.getElementById(`section-${sectionId}`)?.classList.remove('d-none');
@@ -184,6 +167,8 @@ function navigateTo(sectionId) {
   if (sectionId === 'mesin') resetFormMesin();
   if (sectionId === 'tahap') resetFormTahap();
   if (sectionId === 'sparepart') renderSparepartTable();
+  if (sectionId === 'mekanik') renderMekanikTable();
+  if (sectionId === 'akun') loadAkun();
 }
 
 // ── Sidebar mobile (off-canvas) ──
@@ -214,14 +199,14 @@ function toggleDarkMode() {
 // REFERENCE DATA (mesin, sparepart, profiles/mekanik)
 // ============================================================
 async function loadAllReferenceData() {
-  const [mesinRes, sparepartRes, profilesRes] = await Promise.all([
-    sb.from('mesin').select('*').order('created_at', { ascending: false }),
+  const [mesinRes, sparepartRes, mekanikRes] = await Promise.all([
+    sb.from('v_mesin_dropdown').select('*').order('nama_mesin', { ascending: true }),
     sb.from('sparepart').select('*').order('nama_sparepart', { ascending: true }),
-    sb.from('profiles').select('*').order('nama', { ascending: true }),
+    sb.from('mekanik').select('*').order('nama', { ascending: true }),
   ]);
   cachedMesin = mesinRes.data || [];
   cachedSparepart = sparepartRes.data || [];
-  cachedProfiles = profilesRes.data || [];
+  cachedMekanik = mekanikRes.data || [];
 }
 
 // ============================================================
@@ -386,29 +371,45 @@ document.getElementById('form-mesin').addEventListener('submit', async (e) => {
 function resetFormTahap() {
   document.getElementById('form-tahap').reset();
   document.getElementById('tahap-tanggal').value = new Date().toISOString().slice(0, 10);
-
-  const mesinSelect = document.getElementById('tahap-mesin');
-  mesinSelect.innerHTML = cachedMesin.map(m => `<option value="${m.id}">${m.nama_mesin}</option>`).join('');
-
-  const mekanikSelect = document.getElementById('tahap-mekanik');
-  mekanikSelect.innerHTML = cachedProfiles.map(p =>
-    `<option value="${p.id}" ${p.id === currentProfile.id ? 'selected' : ''}>${p.nama} (${p.role})</option>`
-  ).join('');
-  // Mekanik biasa hanya boleh mengisi tahap atas namanya sendiri (ditegakkan juga oleh RLS)
-  if (currentProfile.role !== 'owner') {
-    mekanikSelect.value = currentProfile.id;
-    mekanikSelect.disabled = true;
-  } else {
-    mekanikSelect.disabled = false;
-  }
-
+  document.getElementById('tahap-mesin').innerHTML = cachedMesin.map(m => `<option value="${m.id}">${m.nama_mesin}</option>`).join('');
+  document.getElementById('list-mekanik-tahap').innerHTML = '';
+  addMekanikRow(true);
   document.getElementById('list-sparepart-tahap').innerHTML = '';
   sparepartRowCount = 0;
   addSparepartRow();
   updateTahapTotalPreview();
 }
 
+document.getElementById('btn-tambah-mekanik-row').addEventListener('click', () => addMekanikRow(false));
 document.getElementById('btn-tambah-sparepart-row').addEventListener('click', () => addSparepartRow());
+
+function addMekanikRow(pilihDiriSendiri) {
+  const aktif = cachedMekanik.filter(m => m.aktif);
+  const row = document.createElement('div');
+  row.className = 'sparepart-row';
+  row.innerHTML = `
+    <select class="form-select form-select-sm mk-select">
+      <option value="">-- Pilih mekanik --</option>
+      ${aktif.map(m => `<option value="${m.id}">${m.nama}</option>`).join('')}
+      <option value="__baru__">+ Mekanik baru (ketik nama)</option>
+    </select>
+    <input type="text" class="form-control form-control-sm mk-baru d-none" placeholder="Nama mekanik baru" />
+    <input type="number" min="0" step="1000" class="form-control form-control-sm mk-ongkos" placeholder="Ongkos (Rp)" />
+    <button type="button" class="btn btn-outline-danger btn-sm btn-remove-row"><i class="bi bi-x-lg"></i></button>`;
+  document.getElementById('list-mekanik-tahap').appendChild(row);
+  const select = row.querySelector('.mk-select');
+  const baru = row.querySelector('.mk-baru');
+  if (pilihDiriSendiri) {
+    const saya = aktif.find(m => m.user_id === currentProfile.id);
+    if (saya) select.value = saya.id;
+  }
+  select.addEventListener('change', () => {
+    baru.classList.toggle('d-none', select.value !== '__baru__');
+    if (select.value === '__baru__') baru.focus();
+  });
+  row.querySelector('.mk-ongkos').addEventListener('input', updateTahapTotalPreview);
+  row.querySelector('.btn-remove-row').addEventListener('click', () => { row.remove(); updateTahapTotalPreview(); });
+}
 
 function addSparepartRow() {
   sparepartRowCount++;
@@ -458,35 +459,37 @@ function addSparepartRow() {
   });
 }
 
-document.getElementById('tahap-ongkos').addEventListener('input', updateTahapTotalPreview);
-
 function updateTahapTotalPreview() {
-  const ongkos = Number(document.getElementById('tahap-ongkos').value) || 0;
-  let totalSparepart = 0;
-  document.querySelectorAll('#list-sparepart-tahap .sparepart-row').forEach(row => {
-    totalSparepart += Number(row.querySelector('.sp-harga').value) || 0;
-  });
-  document.getElementById('tahap-total-preview').textContent = formatRupiah(ongkos + totalSparepart);
+  let total = 0;
+  document.querySelectorAll('#list-mekanik-tahap .mk-ongkos, #list-sparepart-tahap .sp-harga')
+    .forEach(el => { total += Number(el.value) || 0; });
+  document.getElementById('tahap-total-preview').textContent = formatRupiah(total);
 }
 
 document.getElementById('form-tahap').addEventListener('submit', async (e) => {
   e.preventDefault();
   const mesinId = document.getElementById('tahap-mesin').value;
-  const mekanikId = document.getElementById('tahap-mekanik').value;
   const tanggal = document.getElementById('tahap-tanggal').value;
   const deskripsi = document.getElementById('tahap-deskripsi').value;
-  const ongkos = document.getElementById('tahap-ongkos').value;
-
   if (!mesinId) { showToast('Pilih mesin terlebih dahulu.', 'error'); return; }
 
-  // Kumpulkan & validasi sparepart dulu sebelum menyimpan apa pun
-  const sparepartRows = [];
+  // Kumpulkan & validasi semua baris dulu sebelum menyimpan apa pun
   let pesanError = null;
+  const mekanikRows = [];
+  document.querySelectorAll('#list-mekanik-tahap .sparepart-row').forEach(row => {
+    const pilihan = row.querySelector('.mk-select').value;
+    const namaBaru = row.querySelector('.mk-baru').value.trim();
+    const ongkos = Number(row.querySelector('.mk-ongkos').value) || 0;
+    if (pilihan === '') return;
+    if (pilihan === '__baru__' && !namaBaru) { pesanError = 'Isi nama mekanik baru.'; return; }
+    mekanikRows.push({ pilihan, namaBaru, ongkos });
+  });
+  const sparepartRows = [];
   document.querySelectorAll('#list-sparepart-tahap .sparepart-row').forEach(row => {
     const pilihan = row.querySelector('.sp-select').value;
     const catatan = row.querySelector('.sp-catatan').value.trim();
     const harga = Number(row.querySelector('.sp-harga').value) || 0;
-    if (pilihan === '') return; // baris belum dipilih, lewati
+    if (pilihan === '') return;
     if (pilihan === '__manual__') {
       if (!catatan) { pesanError = 'Isi catatan (nama sparepart) untuk sparepart yang tidak ada di katalog.'; return; }
       sparepartRows.push({ sparepart_id: null, nama_manual: catatan, harga_manual: harga, harga_terpakai: harga });
@@ -495,28 +498,114 @@ document.getElementById('form-tahap').addEventListener('submit', async (e) => {
     }
   });
   if (pesanError) { showToast(pesanError, 'error'); return; }
+  if (mekanikRows.length === 0) { showToast('Pilih minimal satu mekanik.', 'error'); return; }
 
+  // Mekanik baru dimasukkan ke master data lebih dulu
+  for (const r of mekanikRows) {
+    if (r.pilihan === '__baru__') {
+      const m = await callSupabase(sb.from('mekanik').insert({ nama: r.namaBaru }).select().single());
+      if (!m.success) return;
+      r.mekanikId = m.data.id;
+    } else {
+      r.mekanikId = r.pilihan;
+    }
+  }
+
+  const totalOngkos = mekanikRows.reduce((s, r) => s + r.ongkos, 0);
   const tahapResult = await callSupabase(
-    sb.from('tahap_restorasi').insert({
-      mesin_id: mesinId,
-      mekanik_id: mekanikId,
-      tanggal_pengerjaan: tanggal,
-      deskripsi,
-      ongkos_kerja: ongkos,
-    }).select().single()
+    sb.from('tahap_restorasi').insert({ mesin_id: mesinId, tanggal_pengerjaan: tanggal, deskripsi, ongkos_kerja: totalOngkos }).select().single()
   );
   if (!tahapResult.success) return;
-
   const tahapId = tahapResult.data.id;
 
+  const mk = await callSupabase(sb.from('tahap_mekanik').insert(
+    mekanikRows.map(r => ({ tahap_id: tahapId, mekanik_id: r.mekanikId, ongkos: r.ongkos }))));
+  if (!mk.success) return;
+
   if (sparepartRows.length > 0) {
-    const spResult = await callSupabase(sb.from('tahap_sparepart').insert(sparepartRows.map(r => ({ ...r, tahap_id: tahapId }))));
-    if (!spResult.success) return;
+    const sp = await callSupabase(sb.from('tahap_sparepart').insert(sparepartRows.map(r => ({ ...r, tahap_id: tahapId }))));
+    if (!sp.success) return;
   }
 
   showToast('Tahap restorasi berhasil disimpan.', 'success');
-  resetFormTahap();
-  navigateTo('dashboard');
+  await loadAllReferenceData();
+  navigateTo(currentProfile.role === 'owner' ? 'dashboard' : 'tahap');
+});
+
+// ============================================================
+// MASTER MEKANIK & KELOLA AKUN (Owner)
+// ============================================================
+function renderMekanikTable() {
+  document.getElementById('tbody-mekanik').innerHTML = cachedMekanik.map(m => `
+    <tr>
+      <td>${m.nama}${m.user_id ? ' <i class="bi bi-person-check text-muted" title="Punya akun login"></i>' : ''}</td>
+      <td>${m.aktif ? 'Aktif' : 'Nonaktif'}</td>
+      <td class="text-end"><button class="btn btn-outline-secondary btn-sm" data-toggle-mekanik="${m.id}">${m.aktif ? 'Nonaktifkan' : 'Aktifkan'}</button></td>
+    </tr>`).join('') || '<tr><td colspan="3" class="text-muted">Belum ada mekanik.</td></tr>';
+  document.querySelectorAll('[data-toggle-mekanik]').forEach(btn => btn.addEventListener('click', async () => {
+    const m = cachedMekanik.find(x => x.id === btn.dataset.toggleMekanik);
+    const r = await callSupabase(sb.from('mekanik').update({ aktif: !m.aktif }).eq('id', m.id));
+    if (r.success) { await loadAllReferenceData(); renderMekanikTable(); }
+  }));
+}
+
+document.getElementById('form-mekanik-baru').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const nama = document.getElementById('mekanik-nama').value.trim();
+  if (!nama) return;
+  const r = await callSupabase(sb.from('mekanik').insert({ nama }), 'Mekanik ditambahkan.');
+  if (r.success) { e.target.reset(); await loadAllReferenceData(); renderMekanikTable(); }
+});
+
+async function panggilKelolaAkun(body, pesanSukses) {
+  showLoading();
+  try {
+    const { data, error } = await sb.functions.invoke('kelola-akun', { body });
+    if (error) {
+      let msg = error.message;
+      try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch (_) {}
+      throw new Error(msg);
+    }
+    if (data && data.error) throw new Error(data.error);
+    if (pesanSukses) showToast(pesanSukses, 'success');
+    return { success: true };
+  } catch (err) {
+    showToast(err.message || 'Gagal memproses akun.', 'error');
+    return { success: false };
+  } finally {
+    hideLoading();
+  }
+}
+
+async function loadAkun() {
+  document.getElementById('akun-mekanik').innerHTML = '<option value="">-- Buat mekanik baru dengan nama ini --</option>'
+    + cachedMekanik.filter(m => !m.user_id).map(m => `<option value="${m.id}">${m.nama}</option>`).join('');
+  const r = await callSupabase(sb.from('profiles').select('*').order('nama', { ascending: true }));
+  if (!r.success) return;
+  document.getElementById('list-akun').innerHTML = r.data.map(p => `
+    <div class="rekap-tahap-item d-flex justify-content-between align-items-center">
+      <div><strong>${p.nama}</strong><div class="text-muted small">${p.username || '(login dengan email)'} &bull; ${p.role}</div></div>
+      ${p.id === currentProfile.id ? '' : `<button class="btn btn-outline-secondary btn-sm" data-reset-akun="${p.id}">Reset sandi</button>`}
+    </div>`).join('');
+  document.querySelectorAll('[data-reset-akun]').forEach(btn => btn.addEventListener('click', async () => {
+    const password = prompt('Kata sandi baru (minimal 6 karakter):');
+    if (password) await panggilKelolaAkun({ aksi: 'reset', user_id: btn.dataset.resetAkun, password }, 'Kata sandi diganti.');
+  }));
+}
+
+document.getElementById('form-akun-baru').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const nama = document.getElementById('akun-nama').value.trim();
+  const username = document.getElementById('akun-username').value.trim().toLowerCase();
+  const password = document.getElementById('akun-password').value;
+  let mekanikId = document.getElementById('akun-mekanik').value || null;
+  if (!mekanikId) {
+    const m = await callSupabase(sb.from('mekanik').insert({ nama }).select().single());
+    if (!m.success) return;
+    mekanikId = m.data.id;
+  }
+  const r = await panggilKelolaAkun({ aksi: 'buat', username, nama, password, mekanik_id: mekanikId }, 'Akun berhasil dibuat.');
+  if (r.success) { e.target.reset(); await loadAllReferenceData(); loadAkun(); }
 });
 
 // ============================================================
@@ -560,7 +649,7 @@ async function loadRekapMesin(mesinId) {
   const [mesinRes, tahapRes] = await Promise.all([
     sb.from('mesin').select('*').eq('id', mesinId).single(),
     sb.from('tahap_restorasi')
-      .select('*, tahap_sparepart(*)')
+      .select('*, tahap_sparepart(*), tahap_mekanik(*)')
       .eq('mesin_id', mesinId)
       .order('tanggal_pengerjaan', { ascending: false }),
   ]);
@@ -587,7 +676,7 @@ async function loadRekapMesin(mesinId) {
     const totalSparepartTahap = (t.tahap_sparepart || []).reduce((s, sp) => s + Number(sp.harga_terpakai), 0);
     const totalTahap = Number(t.ongkos_kerja) + totalSparepartTahap;
     totalBiaya += totalTahap;
-    const mekanikNama = (cachedProfiles.find(p => p.id === t.mekanik_id) || {}).nama || '-';
+    const mekanikNama = (t.tahap_mekanik || []).map(tm => (cachedMekanik.find(m => m.id === tm.mekanik_id) || {}).nama || '-').join(', ') || '-';
     const sparepartHtml = (t.tahap_sparepart || []).map(sp => {
       const nama = sp.sparepart_id
         ? (cachedSparepart.find(s => s.id === sp.sparepart_id) || {}).nama_sparepart || '-'
