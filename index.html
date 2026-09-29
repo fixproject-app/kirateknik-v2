@@ -6,7 +6,7 @@
   <title>Kira Teknik</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" />
-  <link rel="stylesheet" href="style.css?v=5" />
+  <link rel="stylesheet" href="style.css?v=6" />
 </head>
 <body data-theme="light">
   <div id="loading-overlay" class="loading-overlay d-none">
@@ -97,6 +97,23 @@
           </div>
           <div id="status-tabs" class="status-tabs"></div>
           <div id="grid-mesin" class="mesin-grid"></div>
+
+          <h2 class="section-title mt-4">Laporan Ongkos per Mekanik</h2>
+          <div class="laporan-filter mb-2">
+            <button type="button" class="laporan-preset active" data-preset="minggu-ini">Minggu Ini (Sen-Sab)</button>
+            <button type="button" class="laporan-preset" data-preset="minggu-lalu">Minggu Lalu</button>
+            <button type="button" class="laporan-preset" data-preset="bulan-ini">Bulan Ini</button>
+            <input type="date" class="form-control form-control-sm" id="laporan-mulai" />
+            <span class="text-muted small">s/d</span>
+            <input type="date" class="form-control form-control-sm" id="laporan-sampai" />
+          </div>
+          <div class="table-responsive">
+            <table class="table table-hover align-middle">
+              <thead><tr><th>Mekanik</th><th class="text-center">Jml Tahap</th><th class="text-end">Total Ongkos</th></tr></thead>
+              <tbody id="tbody-laporan-mekanik"></tbody>
+              <tfoot><tr><th>Total Keseluruhan</th><th></th><th class="text-end" id="laporan-grand-total">Rp 0</th></tr></tfoot>
+            </table>
+          </div>
         </section>
 
         <!-- Tambah Mesin -->
@@ -279,7 +296,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=5"></script>
-  <script src="app.js?v=5"></script>
+  <script src="config.js?v=6"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>
