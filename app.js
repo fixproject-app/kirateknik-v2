@@ -449,13 +449,28 @@ function resetFormTahap() {
   if (tombolSimpan) tombolSimpan.textContent = 'Simpan Tahap Restorasi';
   document.getElementById('form-tahap').reset();
   document.getElementById('tahap-tanggal').value = new Date().toISOString().slice(0, 10);
-  document.getElementById('tahap-mesin').innerHTML = cachedMesin.map(m => `<option value="${m.id}">${m.nama_mesin}</option>`).join('');
+  document.getElementById('tahap-mesin').innerHTML = '<option value="">-- Pilih mesin --</option>'
+    + cachedMesin.map(m => `<option value="${m.id}">${m.nama_mesin}</option>`).join('');
+  tampilkanFotoMesinTahap();
+  document.getElementById('btn-pilih-mesin-tahap').onclick = () => tampilkanFotoMesinTahap();
+
   document.getElementById('list-mekanik-tahap').innerHTML = '';
   addMekanikRow(true);
   document.getElementById('list-sparepart-tahap').innerHTML = '';
   sparepartRowCount = 0;
   addSparepartRow();
   updateTahapTotalPreview();
+}
+
+function tampilkanFotoMesinTahap() {
+  const id = document.getElementById('tahap-mesin').value;
+  const box = document.getElementById('foto-mesin-tahap');
+  const mesin = cachedMesin.find(m => m.id === id);
+  if (!mesin) { box.classList.add('d-none'); box.innerHTML = ''; return; }
+  box.classList.remove('d-none');
+  box.innerHTML = mesin.foto_url
+    ? `<img src="${mesin.foto_url}" alt="${mesin.nama_mesin}" />`
+    : `<div class="no-foto-tahap">Mesin ini belum punya foto</div>`;
 }
 
 document.getElementById('btn-tambah-mekanik-row').addEventListener('click', () => addMekanikRow(false));
@@ -629,15 +644,51 @@ document.getElementById('form-tahap').addEventListener('submit', async (e) => {
 function renderMekanikTable() {
   document.getElementById('tbody-mekanik').innerHTML = cachedMekanik.map(m => `
     <tr>
-      <td>${m.nama}${m.user_id ? ' <i class="bi bi-person-check text-muted" title="Punya akun login"></i>' : ''}</td>
+      <td class="nama-mekanik-cell">
+        <span class="nama-mekanik-teks">${m.nama}</span>
+        <input type="text" class="form-control form-control-sm nama-mekanik-input d-none" value="${m.nama}" />
+        ${m.user_id ? ' <i class="bi bi-person-check text-muted" title="Punya akun login"></i>' : ''}
+      </td>
       <td>${m.aktif ? 'Aktif' : 'Nonaktif'}</td>
-      <td class="text-end"><button class="btn btn-outline-secondary btn-sm" data-toggle-mekanik="${m.id}">${m.aktif ? 'Nonaktifkan' : 'Aktifkan'}</button></td>
+      <td class="text-end text-nowrap">
+        <button class="btn btn-outline-secondary btn-sm" data-edit-mekanik="${m.id}"><i class="bi bi-pencil"></i></button>
+        <button class="btn btn-outline-danger btn-sm" data-hapus-mekanik="${m.id}"><i class="bi bi-trash"></i></button>
+        <button class="btn btn-outline-secondary btn-sm" data-toggle-mekanik="${m.id}">${m.aktif ? 'Nonaktifkan' : 'Aktifkan'}</button>
+      </td>
     </tr>`).join('') || '<tr><td colspan="3" class="text-muted">Belum ada mekanik.</td></tr>';
+
   document.querySelectorAll('[data-toggle-mekanik]').forEach(btn => btn.addEventListener('click', async () => {
     const m = cachedMekanik.find(x => x.id === btn.dataset.toggleMekanik);
     const r = await callSupabase(sb.from('mekanik').update({ aktif: !m.aktif }).eq('id', m.id));
     if (r.success) { await loadAllReferenceData(); renderMekanikTable(); }
   }));
+
+  document.querySelectorAll('[data-edit-mekanik]').forEach(btn => btn.addEventListener('click', () => {
+    const baris = btn.closest('tr');
+    const teks = baris.querySelector('.nama-mekanik-teks');
+    const input = baris.querySelector('.nama-mekanik-input');
+    const sedangEdit = !input.classList.contains('d-none');
+    if (sedangEdit) {
+      simpanNamaMekanik(btn.dataset.editMekanik, input.value.trim());
+    } else {
+      teks.classList.add('d-none'); input.classList.remove('d-none'); input.focus();
+      btn.innerHTML = '<i class="bi bi-check-lg"></i>';
+    }
+  }));
+
+  document.querySelectorAll('[data-hapus-mekanik]').forEach(btn => btn.addEventListener('click', async () => {
+    const m = cachedMekanik.find(x => x.id === btn.dataset.hapusMekanik);
+    if (!confirm(`Hapus mekanik "${m.nama}"? Mekanik yang sudah pernah dicatat di suatu tahap restorasi tidak bisa dihapus, nonaktifkan saja.`)) return;
+    const r = await callSupabase(sb.from('mekanik').delete().eq('id', m.id), 'Mekanik dihapus.');
+    if (r.success) { await loadAllReferenceData(); renderMekanikTable(); }
+  }));
+}
+
+async function simpanNamaMekanik(id, namaBaru) {
+  if (!namaBaru) { showToast('Nama tidak boleh kosong.', 'error'); renderMekanikTable(); return; }
+  const r = await callSupabase(sb.from('mekanik').update({ nama: namaBaru }).eq('id', id), 'Nama mekanik diperbarui.');
+  await loadAllReferenceData();
+  renderMekanikTable();
 }
 
 document.getElementById('form-mekanik-baru').addEventListener('submit', async (e) => {
@@ -841,6 +892,7 @@ function bukaEditTahap(tahapId, tahapList) {
   editTahapId = tahapId;
   navigateTo('tahap');
   document.getElementById('tahap-mesin').value = t.mesin_id;
+  tampilkanFotoMesinTahap();
   document.getElementById('tahap-tanggal').value = t.tanggal_pengerjaan;
   document.getElementById('tahap-deskripsi').value = t.deskripsi || '';
 
