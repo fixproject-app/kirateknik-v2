@@ -871,13 +871,20 @@ async function loadRekapMesin(mesinId) {
     .map(s => `<button class="btn btn-outline-primary btn-sm" data-set-status="${s}">Tandai ${STATUS_LABEL[s].replace('Mesin ', '')}</button>`);
   if (mesin.status_manual) tombol.push('<button class="btn btn-outline-secondary btn-sm" data-set-status="">Kembalikan ke otomatis</button>');
   document.getElementById('rekap-status').innerHTML =
-    `<div class="mb-2">Status: <strong>${STATUS_LABEL[statusSekarang]}</strong></div><div class="d-flex flex-wrap gap-2">${tombol.join('')}</div>`;
+    `<div class="mb-2">Status: <strong>${STATUS_LABEL[statusSekarang]}</strong></div><div class="d-flex flex-wrap gap-2">${tombol.join('')}<button class="btn btn-outline-danger btn-sm" id="btn-hapus-mesin"><i class="bi bi-trash"></i> Hapus Mesin</button></div>`;
   document.querySelectorAll('[data-set-status]').forEach(b => b.addEventListener('click', async () => {
     const r = await callSupabase(sb.from('mesin').update({ status_manual: b.dataset.setStatus || null }).eq('id', mesinId), 'Status mesin diperbarui.');
     if (r.success) loadRekapMesin(mesinId);
   }));
+  document.getElementById('btn-hapus-mesin').addEventListener('click', () => hapusMesin(mesinId, mesin.nama_mesin));
   document.getElementById('rekap-jumlah-tahap').textContent = tahapList.length;
   document.getElementById('rekap-tahap-list').innerHTML = rowsHtml;
+}
+
+async function hapusMesin(mesinId, namaMesin) {
+  if (!confirm(`Hapus mesin "${namaMesin}"? Semua tahap restorasi, sparepart, dan ongkos mekanik yang tercatat untuk mesin ini akan ikut terhapus permanen.`)) return;
+  const r = await callSupabase(sb.from('mesin').delete().eq('id', mesinId), 'Mesin berhasil dihapus.');
+  if (r.success) { await loadAllReferenceData(); navigateTo('dashboard'); }
 }
 
 async function hapusTahap(tahapId, mesinId) {
