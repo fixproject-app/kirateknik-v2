@@ -330,3 +330,51 @@ tfoot th { border-top: 2px solid var(--obsidian); background: var(--bg-secondary
 /* Master Mekanik: kolom nama saat mode edit */
 .nama-mekanik-cell { display: flex; align-items: center; gap: 6px; }
 .nama-mekanik-input { max-width: 220px; }
+
+/* ============================================================
+   Rekap / Invoice PDF
+   ============================================================ */
+.invoice-sheet {
+  background: #ffffff; color: #111111; border: 1px solid var(--border-color);
+  border-radius: var(--radius); padding: 28px; max-width: 900px; font-family: var(--font-body);
+}
+.invoice-kop { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+.invoice-kop-brand { display: flex; gap: 12px; align-items: center; }
+.invoice-logo {
+  width: 48px; height: 48px; border-radius: 6px; background: var(--obsidian); color: var(--mint);
+  display: flex; align-items: center; justify-content: center; font-size: 1.4rem; flex-shrink: 0;
+}
+.invoice-nama-usaha { font-family: var(--font-display); font-size: 1.3rem; letter-spacing: 0.02em; }
+.invoice-alamat { font-size: 0.82rem; color: #555; }
+.invoice-judul { text-align: right; font-family: var(--font-mono); font-weight: 700; font-size: 0.9rem; }
+.invoice-tanggal-cetak { font-weight: 400; color: #555; font-size: 0.75rem; margin-top: 2px; }
+.invoice-garis { border: none; border-top: 2px solid #111; margin: 16px 0; }
+
+.invoice-info-mesin { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+.invoice-foto-mesin { width: 160px; height: 120px; object-fit: cover; border-radius: 6px; border: 1px solid #ccc; }
+.invoice-nama-mesin { font-family: var(--font-display); font-size: 1.2rem; margin-bottom: 6px; }
+.invoice-info-table td { padding: 2px 10px 2px 0; font-size: 0.85rem; }
+.invoice-info-table td:first-child { color: #555; }
+
+.invoice-subjudul { font-family: var(--font-display); font-size: 1rem; margin: 18px 0 8px; text-transform: uppercase; }
+.invoice-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.invoice-table th, .invoice-table td { border: 1px solid #ccc; padding: 8px; vertical-align: top; }
+.invoice-table thead th { background: #111; color: #fff; font-family: var(--font-mono); text-transform: uppercase; font-size: 0.72rem; }
+.invoice-table tfoot td { font-weight: 700; border: none; padding: 6px 8px; }
+.invoice-table tfoot .invoice-grand-total td { font-size: 1rem; border-top: 2px solid #111; padding-top: 10px; }
+
+.invoice-footer { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 40px; font-size: 0.78rem; color: #555; }
+.invoice-ttd { text-align: center; }
+.invoice-ttd-garis { width: 160px; border-bottom: 1px solid #111; margin: 50px 0 4px; }
+
+/* Sembunyikan chrome aplikasi saat mencetak; tampilkan hanya invoice */
+@media print {
+  .no-print { display: none !important; }
+  body * { visibility: hidden; }
+  .invoice-sheet, .invoice-sheet * { visibility: visible; }
+  .invoice-sheet {
+    position: absolute; top: 0; left: 0; width: 100%; max-width: 100%;
+    border: none; padding: 0; box-shadow: none;
+  }
+  .sidebar, .topbar, .sidebar-backdrop { display: none !important; }
+}
