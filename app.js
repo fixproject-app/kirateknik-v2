@@ -58,8 +58,15 @@ async function callSupabase(promise, successMessage) {
     if (successMessage) showToast(successMessage, 'success');
     return { success: true, data };
   } catch (error) {
-    showToast(error.message || 'Terjadi kesalahan.', 'error');
-    return { success: false, data: null, message: error.message };
+    const pesan = String(error.message || '');
+    if (/jwt|token|not authenticated|invalid refresh/i.test(pesan)) {
+      showToast('Sesi login berakhir. Silakan masuk lagi.', 'error');
+      hideLoading();
+      await sb.auth.signOut();
+      return { success: false, data: null, message: pesan };
+    }
+    showToast(pesan || 'Terjadi kesalahan.', 'error');
+    return { success: false, data: null, message: pesan };
   } finally {
     hideLoading();
   }
@@ -97,6 +104,8 @@ function rentangTanggal(preset) {
 // AUTH
 // ============================================================
 const NAMA_FUNGSI_AKUN = _cfg.FUNGSI_AKUN || 'kelola-akun';
+const NAMA_USAHA = _cfg.NAMA_USAHA || 'KIRA TEKNIK';
+const ALAMAT_USAHA = _cfg.ALAMAT_USAHA || 'Alamat bengkel belum diisi di config.js';
 const LOGIN_DOMAIN = _cfg.LOGIN_DOMAIN || 'kirateknik.app';
 function usernameKeEmail(input) {
   const v = String(input || '').trim().toLowerCase();
@@ -150,7 +159,7 @@ async function initAppForUser(userId) {
 
   let tersimpan = null;
   try { tersimpan = sessionStorage.getItem('kt_section'); } catch (_) {}
-  const boleh = isOwner ? ['dashboard', 'mesin', 'tahap', 'sparepart', 'mekanik', 'akun'] : MEKANIK_SECTIONS;
+  const boleh = isOwner ? ['dashboard', 'mesin', 'tahap', 'sparepart', 'mekanik', 'akun', 'invoice'] : MEKANIK_SECTIONS;
   const tujuan = boleh.includes(tersimpan) ? tersimpan : (isOwner ? 'dashboard' : 'tahap');
   navigateTo(tujuan);
   if (tujuan === 'mesin' && restoreDraftMesin()) {
@@ -172,7 +181,7 @@ document.querySelectorAll('.sidebar .nav-link').forEach(link => {
 
 const SECTION_TITLES = {
   dashboard: 'Dashboard', mesin: 'Tambah Mesin', tahap: 'Tambah Tahap Restorasi',
-  sparepart: 'Katalog Sparepart', rekap: 'Rekap Biaya Mesin', mekanik: 'Master Mekanik', akun: 'Kelola Akun',
+  sparepart: 'Katalog Sparepart', rekap: 'Rekap Biaya Mesin', mekanik: 'Master Mekanik', akun: 'Kelola Akun', invoice: 'Rekap / Invoice',
 };
 const MEKANIK_SECTIONS = ['tahap', 'sparepart'];
 
@@ -192,6 +201,7 @@ function navigateTo(sectionId) {
   if (sectionId === 'sparepart') renderSparepartTable();
   if (sectionId === 'mekanik') renderMekanikTable();
   if (sectionId === 'akun') loadAkun();
+  if (sectionId === 'invoice') resetInvoice();
 }
 
 // ── Sidebar mobile (off-canvas) ──
@@ -441,7 +451,7 @@ document.getElementById('form-mesin').addEventListener('submit', async (e) => {
 // ============================================================
 // FORM: TAMBAH TAHAP RESTORASI
 // ============================================================
-function resetFormTahap() {
+function resetFormTahap(mesinDipertahankan) {
   editTahapId = null;
   const batal = document.getElementById('btn-batal-edit-tahap');
   if (batal) batal.classList.add('d-none');
@@ -451,6 +461,7 @@ function resetFormTahap() {
   document.getElementById('tahap-tanggal').value = new Date().toISOString().slice(0, 10);
   document.getElementById('tahap-mesin').innerHTML = '<option value="">-- Pilih mesin --</option>'
     + cachedMesin.map(m => `<option value="${m.id}">${m.nama_mesin}</option>`).join('');
+  document.getElementById('tahap-mesin').value = mesinDipertahankan || '';
   tampilkanFotoMesinTahap();
   document.getElementById('btn-pilih-mesin-tahap').onclick = () => tampilkanFotoMesinTahap();
 
@@ -466,11 +477,62 @@ function tampilkanFotoMesinTahap() {
   const id = document.getElementById('tahap-mesin').value;
   const box = document.getElementById('foto-mesin-tahap');
   const mesin = cachedMesin.find(m => m.id === id);
-  if (!mesin) { box.classList.add('d-none'); box.innerHTML = ''; return; }
-  box.classList.remove('d-none');
-  box.innerHTML = mesin.foto_url
-    ? `<img src="${mesin.foto_url}" alt="${mesin.nama_mesin}" />`
-    : `<div class="no-foto-tahap">Mesin ini belum punya foto</div>`;
+  if (!mesin) { box.classList.add('d-none'); box.innerHTML = ''; }
+  else {
+    box.classList.remove('d-none');
+    box.innerHTML = mesin.foto_url
+      ? `<img src="${mesin.foto_url}" alt="${mesin.nama_mesin}" />`
+      : `<div class="no-foto-tahap">Mesin ini belum punya foto</div>`;
+  }
+  renderRiwayatTahap(id);
+}
+
+// Riwayat tahap untuk mesin yang sedang dipilih di form Tambah Tahap,
+// supaya begitu selesai input, hasilnya langsung terlihat tanpa pindah halaman.
+async function renderRiwayatTahap(mesinId) {
+  const panel = document.getElementById('riwayat-tahap-panel');
+  const list = document.getElementById('riwayat-tahap-list');
+  if (!mesinId) { panel.classList.add('d-none'); list.innerHTML = ''; return; }
+  panel.classList.remove('d-none');
+  list.innerHTML = '<p class="text-muted small">Memuat riwayat...</p>';
+
+  const { data, error } = await sb.from('tahap_restorasi')
+    .select('*, tahap_sparepart(*), tahap_mekanik(*)')
+    .eq('mesin_id', mesinId)
+    .order('tanggal_pengerjaan', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (error) { list.innerHTML = `<p class="text-danger small">${error.message}</p>`; return; }
+  if (!data || data.length === 0) {
+    list.innerHTML = '<p class="text-muted small">Belum ada tahap restorasi untuk mesin ini.</p>';
+    return;
+  }
+
+  list.innerHTML = data.map(t => {
+    const totalSparepartTahap = (t.tahap_sparepart || []).reduce((s, sp) => s + Number(sp.harga_terpakai), 0);
+    const totalOngkosTahap = (t.tahap_mekanik || []).reduce((s, tm) => s + Number(tm.ongkos), 0);
+    const totalTahap = totalOngkosTahap + totalSparepartTahap;
+    const mekanikNama = (t.tahap_mekanik || []).map(tm => {
+      const m = cachedMekanik.find(x => x.id === tm.mekanik_id);
+      return `${m ? m.nama : '(mekanik tidak dikenal)'} — ${formatRupiah(tm.ongkos)}`;
+    }).join(', ') || '-';
+    const sparepartHtml = (t.tahap_sparepart || []).map(sp => {
+      const nama = sp.sparepart_id
+        ? (cachedSparepart.find(s => s.id === sp.sparepart_id) || {}).nama_sparepart || '-'
+        : `${sp.nama_manual} (catatan)`;
+      return `<li>${nama} — ${formatRupiah(sp.harga_terpakai)}</li>`;
+    }).join('');
+    return `
+      <div class="rekap-tahap-item">
+        <div class="d-flex justify-content-between">
+          <strong>${t.tanggal_pengerjaan}</strong>
+          <span class="tahap-total">${formatRupiah(totalTahap)}</span>
+        </div>
+        <div class="text-muted small mb-1">${t.deskripsi || '-'}</div>
+        <div class="small">Mekanik: ${mekanikNama}</div>
+        ${sparepartHtml ? `<ul class="small mb-0 mt-1">${sparepartHtml}</ul>` : ''}
+      </div>`;
+  }).join('');
 }
 
 document.getElementById('btn-tambah-mekanik-row').addEventListener('click', () => addMekanikRow(false));
@@ -632,10 +694,13 @@ document.getElementById('form-tahap').addEventListener('submit', async (e) => {
   }
 
   showToast(sedangEdit ? 'Perubahan tahap berhasil disimpan.' : 'Tahap restorasi berhasil disimpan.', 'success');
-  const kembaliKe = sedangEdit ? 'rekap' : (currentProfile.role === 'owner' ? 'dashboard' : 'tahap');
   editTahapId = null;
   await loadAllReferenceData();
-  if (kembaliKe === 'rekap') { navigateTo('rekap'); loadRekapMesin(mesinId); } else { navigateTo(kembaliKe); }
+  if (sedangEdit) {
+    navigateTo('rekap'); loadRekapMesin(mesinId);
+  } else {
+    resetFormTahap(mesinId);
+  }
 });
 
 // ============================================================
@@ -896,8 +961,8 @@ async function hapusTahap(tahapId, mesinId) {
 function bukaEditTahap(tahapId, tahapList) {
   const t = tahapList.find(x => x.id === tahapId);
   if (!t) return;
-  editTahapId = tahapId;
-  navigateTo('tahap');
+  navigateTo('tahap'); // memanggil resetFormTahap() yang mengosongkan editTahapId
+  editTahapId = tahapId; // harus di-set SETELAH navigateTo, bukan sebelum
   document.getElementById('tahap-mesin').value = t.mesin_id;
   tampilkanFotoMesinTahap();
   document.getElementById('tahap-tanggal').value = t.tanggal_pengerjaan;
@@ -955,6 +1020,74 @@ function openFotoModal(url) {
   new bootstrap.Modal(document.getElementById('modal-preview-foto')).show();
 }
 window.openFotoModal = openFotoModal;
+
+// ============================================================
+// REKAP / INVOICE PDF (Owner) — dibuat sebagai halaman cetak (window.print),
+// browser menyediakan "Simpan sebagai PDF" pada dialog cetaknya.
+// ============================================================
+function resetInvoice() {
+  document.getElementById('invoice-mesin').innerHTML = '<option value="">-- Pilih mesin --</option>'
+    + cachedMesin.map(m => `<option value="${m.id}">${m.nama_mesin}</option>`).join('');
+  document.getElementById('invoice-sheet').classList.add('d-none');
+}
+document.getElementById('btn-pilih-mesin-invoice').addEventListener('click', () => {
+  const id = document.getElementById('invoice-mesin').value;
+  if (id) renderInvoice(id); else showToast('Pilih mesin terlebih dahulu.', 'error');
+});
+document.getElementById('btn-cetak-invoice').addEventListener('click', () => window.print());
+
+async function renderInvoice(mesinId) {
+  const [mesinRes, tahapRes] = await Promise.all([
+    sb.from('mesin').select('*').eq('id', mesinId).single(),
+    sb.from('tahap_restorasi').select('*, tahap_sparepart(*), tahap_mekanik(*)')
+      .eq('mesin_id', mesinId).order('tanggal_pengerjaan', { ascending: true }),
+  ]);
+  if (mesinRes.error || tahapRes.error) { showToast('Gagal memuat data invoice.', 'error'); return; }
+
+  const mesin = mesinRes.data;
+  const tahapList = tahapRes.data || [];
+  document.getElementById('invoice-sheet').classList.remove('d-none');
+
+  document.getElementById('invoice-nama-usaha').textContent = NAMA_USAHA;
+  document.getElementById('invoice-alamat').textContent = ALAMAT_USAHA;
+  document.getElementById('invoice-tanggal-cetak').textContent = 'Dicetak: ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  document.getElementById('invoice-foto-mesin').src = mesin.foto_url || '';
+  document.getElementById('invoice-foto-mesin').classList.toggle('d-none', !mesin.foto_url);
+  document.getElementById('invoice-nama-mesin').textContent = mesin.nama_mesin;
+  document.getElementById('invoice-harga-beli').textContent = formatRupiah(mesin.harga_beli);
+  document.getElementById('invoice-tanggal-beli').textContent = mesin.tanggal_pembelian;
+  document.getElementById('invoice-status').textContent = STATUS_LABEL[mesin.status_manual || (tahapList.length ? 'restorasi' : 'masuk')];
+
+  let totalRestorasi = 0;
+  document.getElementById('invoice-tbody').innerHTML = tahapList.map(t => {
+    const totalSparepartTahap = (t.tahap_sparepart || []).reduce((s, sp) => s + Number(sp.harga_terpakai), 0);
+    const totalOngkosTahap = (t.tahap_mekanik || []).reduce((s, tm) => s + Number(tm.ongkos), 0);
+    const totalTahap = totalOngkosTahap + totalSparepartTahap;
+    totalRestorasi += totalTahap;
+    const mekanikHtml = (t.tahap_mekanik || []).map(tm => {
+      const m = cachedMekanik.find(x => x.id === tm.mekanik_id);
+      return `<div>${m ? m.nama : '(tidak dikenal)'}: ${formatRupiah(tm.ongkos)}</div>`;
+    }).join('') || '-';
+    const sparepartHtml = (t.tahap_sparepart || []).map(sp => {
+      const nama = sp.sparepart_id
+        ? (cachedSparepart.find(s => s.id === sp.sparepart_id) || {}).nama_sparepart || '-'
+        : `${sp.nama_manual} (catatan)`;
+      return `<div>${nama}: ${formatRupiah(sp.harga_terpakai)}</div>`;
+    }).join('') || '-';
+    return `<tr>
+      <td>${t.tanggal_pengerjaan}</td>
+      <td>${t.deskripsi || '-'}</td>
+      <td>${mekanikHtml}</td>
+      <td>${sparepartHtml}</td>
+      <td class="text-end">${formatRupiah(totalTahap)}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="5" class="text-center text-muted">Belum ada tahap restorasi.</td></tr>';
+
+  document.getElementById('invoice-total').textContent = formatRupiah(totalRestorasi);
+  document.getElementById('invoice-harga-beli-2').textContent = formatRupiah(mesin.harga_beli);
+  document.getElementById('invoice-hpp').textContent = formatRupiah(Number(mesin.harga_beli) + totalRestorasi);
+}
 
 // ============================================================
 // REALTIME — Owner langsung melihat update tanpa reload
