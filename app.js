@@ -106,6 +106,17 @@ function rentangTanggal(preset) {
 const NAMA_FUNGSI_AKUN = _cfg.FUNGSI_AKUN || 'kelola-akun';
 const NAMA_USAHA = _cfg.NAMA_USAHA || 'KIRA TEKNIK';
 const ALAMAT_USAHA = _cfg.ALAMAT_USAHA || 'Alamat bengkel belum diisi di config.js';
+const LOGO_URL = _cfg.LOGO_URL || '';
+
+// Terapkan logo kustom (kalau diisi di config.js) ke Login, Sidebar, dan kop Invoice.
+// Kalau kosong, ikon bawaan tetap dipakai.
+function terapkanLogo() {
+  if (!LOGO_URL) return;
+  document.querySelectorAll('#logo-login, #logo-sidebar, #logo-invoice').forEach(slot => {
+    slot.innerHTML = `<img src="${LOGO_URL}" alt="Logo" />`;
+  });
+}
+terapkanLogo();
 const LOGIN_DOMAIN = _cfg.LOGIN_DOMAIN || 'kirateknik.app';
 function usernameKeEmail(input) {
   const v = String(input || '').trim().toLowerCase();
