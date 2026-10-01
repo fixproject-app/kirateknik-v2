@@ -10,5 +10,6 @@ window.KIRA_CONFIG = {
   SUPABASE_ANON_KEY: 'sb_publishable_j4V6keWo2jXsR25DAXj5-g_3V58y9qw',
   FUNGSI_AKUN: 'hyper-function',
   NAMA_USAHA: 'KIRA TEKNIK',
-  ALAMAT_USAHA: 'Adiwerna - Tegal'
+  ALAMAT_USAHA: 'Adiwerna - Tegal',
+  LOGO_URL: 'logo Kira Teknik.png'
 };
