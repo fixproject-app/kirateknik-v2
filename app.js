@@ -925,9 +925,6 @@ async function loadRekapMesin(mesinId) {
     `;
   }).join('') || '<p class="text-muted">Belum ada tahap restorasi untuk mesin ini.</p>';
 
-  document.querySelectorAll('[data-edit-tahap]').forEach(b => b.addEventListener('click', () => bukaEditTahap(b.dataset.editTahap, tahapList)));
-  document.querySelectorAll('[data-hapus-tahap]').forEach(b => b.addEventListener('click', () => hapusTahap(b.dataset.hapusTahap, mesinId)));
-
   document.getElementById('rekap-total').textContent = formatRupiah(totalBiaya);
   document.getElementById('rekap-hpp').textContent = formatRupiah(Number(mesin.harga_beli) + totalBiaya);
 
@@ -944,6 +941,10 @@ async function loadRekapMesin(mesinId) {
   document.getElementById('btn-hapus-mesin').addEventListener('click', () => hapusMesin(mesinId, mesin.nama_mesin));
   document.getElementById('rekap-jumlah-tahap').textContent = tahapList.length;
   document.getElementById('rekap-tahap-list').innerHTML = rowsHtml;
+
+  // Pasang pendengar klik SETELAH tombolnya benar-benar ada di halaman
+  document.querySelectorAll('[data-edit-tahap]').forEach(b => b.addEventListener('click', () => bukaEditTahap(b.dataset.editTahap, tahapList)));
+  document.querySelectorAll('[data-hapus-tahap]').forEach(b => b.addEventListener('click', () => hapusTahap(b.dataset.hapusTahap, mesinId)));
 }
 
 async function hapusMesin(mesinId, namaMesin) {
