@@ -529,8 +529,8 @@ async function renderRiwayatTahap(mesinId) {
     }).join(', ') || '-';
     const sparepartHtml = (t.tahap_sparepart || []).map(sp => {
       const nama = sp.sparepart_id
-        ? (cachedSparepart.find(s => s.id === sp.sparepart_id) || {}).nama_sparepart || '-'
-        : `${sp.nama_manual} (catatan)`;
+        ? (cachedSparepart.find(s => s.id === sp.sparepart_id) || {}).nama_sparepart || '(sparepart sudah dihapus dari katalog)'
+        : sp.nama_manual ? `${sp.nama_manual} (catatan)` : '(sparepart sudah dihapus dari katalog)';
       return `<li>${nama} — ${formatRupiah(sp.harga_terpakai)}</li>`;
     }).join('');
     return `
@@ -864,8 +864,46 @@ function renderSparepartTable() {
   const keyword = (document.getElementById('filter-sparepart').value || '').toLowerCase();
   const rows = cachedSparepart.filter(s => s.nama_sparepart.toLowerCase().includes(keyword));
   document.getElementById('tbody-sparepart').innerHTML = rows.map(s => `
-    <tr><td>${s.nama_sparepart}</td><td class="text-end">${formatRupiah(s.harga)}</td></tr>
-  `).join('') || '<tr><td colspan="2" class="text-muted">Belum ada sparepart.</td></tr>';
+    <tr data-id="${s.id}">
+      <td>
+        <span class="sp-nama-teks">${s.nama_sparepart}</span>
+        <input type="text" class="form-control form-control-sm sp-nama-input d-none" value="${s.nama_sparepart}" />
+      </td>
+      <td class="text-end">
+        <span class="sp-harga-teks">${formatRupiah(s.harga)}</span>
+        <input type="number" min="0" step="500" class="form-control form-control-sm sp-harga-input d-none text-end" value="${s.harga}" />
+      </td>
+      <td class="text-end text-nowrap">
+        <button class="btn btn-outline-secondary btn-sm" data-edit-sp="${s.id}"><i class="bi bi-pencil"></i></button>
+        <button class="btn btn-outline-danger btn-sm" data-hapus-sp="${s.id}"><i class="bi bi-trash"></i></button>
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="3" class="text-muted">Belum ada sparepart.</td></tr>';
+
+  document.querySelectorAll('[data-edit-sp]').forEach(btn => btn.addEventListener('click', async () => {
+    const baris = btn.closest('tr');
+    const namaTeks = baris.querySelector('.sp-nama-teks'), namaInput = baris.querySelector('.sp-nama-input');
+    const hargaTeks = baris.querySelector('.sp-harga-teks'), hargaInput = baris.querySelector('.sp-harga-input');
+    const sedangEdit = !namaInput.classList.contains('d-none');
+    if (!sedangEdit) {
+      namaTeks.classList.add('d-none'); namaInput.classList.remove('d-none'); namaInput.focus();
+      hargaTeks.classList.add('d-none'); hargaInput.classList.remove('d-none');
+      btn.innerHTML = '<i class="bi bi-check-lg"></i>';
+      return;
+    }
+    const namaBaru = namaInput.value.trim();
+    const hargaBaru = Number(hargaInput.value) || 0;
+    if (!namaBaru) { showToast('Nama sparepart tidak boleh kosong.', 'error'); return; }
+    const r = await callSupabase(sb.from('sparepart').update({ nama_sparepart: namaBaru, harga: hargaBaru }).eq('id', btn.dataset.editSp), 'Sparepart diperbarui.');
+    if (r.success) { await loadAllReferenceData(); renderSparepartTable(); }
+  }));
+
+  document.querySelectorAll('[data-hapus-sp]').forEach(btn => btn.addEventListener('click', async () => {
+    const sp = cachedSparepart.find(x => x.id === btn.dataset.hapusSp);
+    if (!confirm(`Hapus "${sp.nama_sparepart}"? Riwayat tahap yang sudah memakai sparepart ini tetap tersimpan, tapi namanya tidak akan muncul lagi di riwayat/rekap/invoice lama.`)) return;
+    const r = await callSupabase(sb.from('sparepart').delete().eq('id', sp.id), 'Sparepart dihapus.');
+    if (r.success) { await loadAllReferenceData(); renderSparepartTable(); }
+  }));
 }
 document.getElementById('filter-sparepart').addEventListener('input', renderSparepartTable);
 
@@ -915,8 +953,8 @@ async function loadRekapMesin(mesinId) {
     const mekanikNama = (t.tahap_mekanik || []).map(tm => (cachedMekanik.find(m => m.id === tm.mekanik_id) || {}).nama || '-').join(', ') || '-';
     const sparepartHtml = (t.tahap_sparepart || []).map(sp => {
       const nama = sp.sparepart_id
-        ? (cachedSparepart.find(s => s.id === sp.sparepart_id) || {}).nama_sparepart || '-'
-        : `${sp.nama_manual} (catatan)`;
+        ? (cachedSparepart.find(s => s.id === sp.sparepart_id) || {}).nama_sparepart || '(sparepart sudah dihapus dari katalog)'
+        : sp.nama_manual ? `${sp.nama_manual} (catatan)` : '(sparepart sudah dihapus dari katalog)';
       return `<li>${nama} — ${formatRupiah(sp.harga_terpakai)}</li>`;
     }).join('');
     return `
@@ -1083,8 +1121,8 @@ async function renderInvoice(mesinId) {
     }).join('') || '-';
     const sparepartHtml = (t.tahap_sparepart || []).map(sp => {
       const nama = sp.sparepart_id
-        ? (cachedSparepart.find(s => s.id === sp.sparepart_id) || {}).nama_sparepart || '-'
-        : `${sp.nama_manual} (catatan)`;
+        ? (cachedSparepart.find(s => s.id === sp.sparepart_id) || {}).nama_sparepart || '(sparepart sudah dihapus dari katalog)'
+        : sp.nama_manual ? `${sp.nama_manual} (catatan)` : '(sparepart sudah dihapus dari katalog)';
       return `<div>${nama}: ${formatRupiah(sp.harga_terpakai)}</div>`;
     }).join('') || '-';
     return `<tr>
