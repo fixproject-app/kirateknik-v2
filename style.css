@@ -168,7 +168,7 @@ label, .form-label, .filter-input, .form-text, small, .text-muted,
 
 /* ============ KPI Cards ============ */
 .kpi-row { display: grid; grid-template-columns: 1fr; gap: 12px; }
-@media (min-width: 576px) { .kpi-row { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 576px) { .kpi-row { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); } }
 .kpi-card {
   background: var(--bg-surface); border-radius: var(--radius);
   padding: 16px 18px; border: 2px solid var(--obsidian); box-shadow: 2px 2px 0px var(--obsidian);
@@ -188,6 +188,7 @@ label, .form-label, .filter-input, .form-text, small, .text-muted,
   gap: 14px;
 }
 .mesin-card {
+  position: relative;
   background: var(--bg-surface); border: 2px solid var(--obsidian);
   border-radius: var(--radius); overflow: hidden; cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease; box-shadow: 2px 2px 0px var(--obsidian);
@@ -384,3 +385,157 @@ tfoot th { border-top: 2px solid var(--obsidian); background: var(--bg-secondary
   width: 100%; height: 100%; object-fit: contain; border-radius: inherit;
 }
 .sidebar-logo-slot { display: inline-flex; width: 22px; height: 22px; vertical-align: middle; }
+
+
+/* ============================================================
+   Update Oktober 2026: Edit mesin, uploader foto, Asset Part, Pengaturan
+   ============================================================ */
+.mesin-card-edit {
+  position: absolute; top: 8px; right: 8px; z-index: 2;
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  background: var(--bg-surface); color: var(--obsidian); border: 2px solid var(--obsidian);
+  border-radius: var(--radius); box-shadow: 2px 2px 0 var(--obsidian); font-size: 0.8rem;
+}
+.mesin-card-edit:hover { background: var(--mint); }
+
+.up-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 8px; }
+.up-grid:empty { display: none; }
+.up-item { position: relative; border: 2px solid var(--obsidian); border-radius: var(--radius); overflow: hidden; background: var(--bg-secondary); }
+.up-item img { width: 100%; display: block; aspect-ratio: 4/3; object-fit: cover; }
+.up-sampul {
+  position: absolute; left: 6px; top: 6px; background: var(--mint); color: var(--obsidian);
+  font-family: var(--font-mono); font-size: 0.65rem; font-weight: 700; padding: 2px 6px; border-radius: 2px; text-transform: uppercase;
+}
+.up-x {
+  position: absolute; right: 6px; top: 6px; width: 28px; height: 28px; border: 2px solid var(--obsidian);
+  background: #fff; color: var(--danger); border-radius: var(--radius); display: flex; align-items: center; justify-content: center; font-size: 0.75rem;
+}
+.up-utama {
+  position: absolute; left: 0; right: 0; bottom: 0; border: none; background: rgba(7,14,29,0.78); color: #fff;
+  font-family: var(--font-mono); font-size: 0.68rem; padding: 5px;
+}
+@media (min-width: 576px) { .up-grid { grid-template-columns: repeat(4, 1fr); } }
+.card-form .foto-actions, .modal-body .foto-actions { margin-top: 2px; }
+
+.badge-opsi { display: flex; flex-wrap: wrap; gap: 8px; }
+.badge-opsi-item {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--obsidian); border-radius: 999px;
+  padding: 5px 12px; font-size: 0.78rem; cursor: pointer; background: var(--bg-surface); text-transform: none;
+}
+.badge-opsi-item .form-check-input { margin: 0; }
+
+.pengaturan-sub {
+  font-size: 1rem; margin: 22px 0 12px; padding-bottom: 6px; border-bottom: 2px solid var(--obsidian);
+}
+.pengaturan-sub:first-child { margin-top: 0; }
+.pg-logo-preview { width: 64px; height: 64px; object-fit: contain; background: var(--bg-secondary); border: 2px solid var(--obsidian); border-radius: var(--radius); padding: 4px; }
+
+.tahap-foto-strip { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.tahap-foto-strip img { width: 84px; height: 84px; object-fit: cover; border: 2px solid var(--obsidian); border-radius: var(--radius); cursor: pointer; }
+
+.jenis-pill { font-family: var(--font-mono); font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--obsidian); }
+.jenis-masuk { background: var(--mint); color: var(--obsidian); }
+.jenis-keluar { background: var(--chartreuse); color: var(--obsidian); }
+.jenis-koreksi { background: var(--bg-secondary); color: var(--text-primary); }
+.jenis-hapus { background: #ffdad6; color: var(--danger); border-color: var(--danger); }
+
+/* ============================================================
+   Slider generik (kartu katalog, hero, modal)
+   ============================================================ */
+.sl { position: relative; overflow: hidden; }
+.sl-track { display: flex; transition: transform 0.5s ease; will-change: transform; }
+.sl-track > img { flex: 0 0 100%; width: 100%; display: block; object-fit: cover; }
+.sl-dots { position: absolute; left: 0; right: 0; bottom: 8px; display: flex; justify-content: center; gap: 6px; z-index: 2; }
+.sl-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.55); border: 1px solid rgba(7,14,29,0.6); cursor: pointer; }
+.sl-dot.active { background: var(--mint); }
+
+/* ============================================================
+   KATALOG PUBLIK
+   ============================================================ */
+.katalog { min-height: 100vh; background: var(--bg-primary); display: flex; flex-direction: column; }
+.kat-topbar {
+  position: sticky; top: 0; z-index: 50; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--obsidian); color: #fff; border-bottom: 2px solid var(--mint); padding: 10px 16px;
+}
+.kat-brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); text-transform: uppercase; font-size: 1.1rem; letter-spacing: 0.02em; min-width: 0; }
+.kat-brand span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kat-logo { width: 32px; height: 32px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--mint); font-size: 1.2rem; }
+.kat-logo img { width: 100%; height: 100%; object-fit: contain; }
+.kat-topbar .btn-primary { background: var(--mint); color: var(--obsidian); border-color: var(--mint); box-shadow: none; white-space: nowrap; }
+
+.kat-hero { position: relative; background: var(--obsidian); color: #fff; border-bottom: 2px solid var(--obsidian); }
+.kat-hero .sl-track > img { height: clamp(220px, 42vw, 440px); }
+.kat-hero-polos { background-image: linear-gradient(135deg, #070e1d 0%, #0f2a3a 60%, #07e4a8 220%); min-height: clamp(220px, 42vw, 440px); }
+.kat-hero-polos .sl-track { display: none; }
+.kat-hero-overlay {
+  position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
+  padding: 24px clamp(16px, 6vw, 72px); background: linear-gradient(90deg, rgba(7,14,29,0.78) 0%, rgba(7,14,29,0.25) 100%); gap: 10px;
+}
+.kat-hero-polos .kat-hero-overlay { background: none; position: relative; min-height: clamp(220px, 42vw, 440px); }
+.kat-hero-overlay h1 { font-size: clamp(1.5rem, 5vw, 3rem); max-width: 18ch; margin: 0; line-height: 1.1; }
+.kat-hero-overlay p { max-width: 52ch; margin: 0; font-size: 0.95rem; opacity: 0.92; }
+.kat-hero-overlay .btn-primary { background: var(--mint); color: var(--obsidian); border-color: var(--mint); }
+.kat-hero-dots { bottom: 12px; z-index: 3; }
+
+.kat-main { width: 100%; max-width: 1200px; margin: 0 auto; padding: 20px 16px 32px; flex: 1; }
+.kat-toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.kat-search { grid-column: 1 / -1; position: relative; }
+.kat-search i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+.kat-search .form-control { padding-left: 36px; }
+@media (min-width: 768px) {
+  .kat-toolbar { grid-template-columns: 1fr 200px 160px; }
+  .kat-search { grid-column: auto; }
+}
+.kat-toolbar .form-select { min-width: 0; }
+.kat-info { font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted); margin-bottom: 12px; min-height: 1.1em; }
+
+.kat-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+@media (min-width: 560px) { .kat-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 960px) { .kat-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 1200px) { .kat-grid { grid-template-columns: repeat(4, 1fr); } }
+.kat-card {
+  background: var(--bg-surface); border: 2px solid var(--obsidian); border-radius: var(--radius);
+  box-shadow: 3px 3px 0 var(--obsidian); display: flex; flex-direction: column; overflow: hidden;
+}
+.kat-media { position: relative; aspect-ratio: 4/3; background: var(--bg-secondary); border-bottom: 2px solid var(--obsidian); cursor: pointer; overflow: hidden; }
+.kat-media .sl { position: absolute; inset: 0; }
+.kat-media .sl-track, .kat-media .sl-track > img { height: 100%; }
+.kat-nofoto { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 2rem; color: var(--text-muted); }
+.kat-badges { position: absolute; left: 8px; top: 8px; display: flex; flex-direction: column; gap: 4px; z-index: 3; pointer-events: none; align-items: flex-start; }
+.kat-badge {
+  display: inline-flex; align-items: center; gap: 5px; background: var(--obsidian); color: var(--mint);
+  font-family: var(--font-mono); font-size: 0.68rem; font-weight: 700; padding: 3px 8px; border-radius: 2px; border: 1px solid var(--mint);
+}
+.kat-card-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.kat-kategori {
+  align-self: flex-start; font-family: var(--font-mono); font-size: 0.66rem; font-weight: 700; text-transform: uppercase;
+  background: var(--chartreuse); color: var(--obsidian); padding: 2px 8px; border-radius: 2px; border: 1px solid var(--obsidian);
+}
+.kat-nama { font-size: 1.05rem; margin: 0; font-weight: 400; }
+.kat-desk { font-size: 0.82rem; color: var(--text-muted); margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.kat-desk-penuh { font-size: 0.9rem; }
+.kat-aksi { display: flex; gap: 8px; margin-top: auto; padding-top: 8px; }
+.kat-aksi .btn { flex: 1; }
+.kat-kosong { grid-column: 1 / -1; text-align: center; padding: 48px 16px; color: var(--text-muted); font-family: var(--font-mono); }
+.kat-kosong i { font-size: 2rem; }
+
+.kat-footer { background: var(--obsidian); color: rgba(255,255,255,0.85); border-top: 2px solid var(--mint); margin-top: auto; }
+.kat-footer-inner { max-width: 1200px; margin: 0 auto; padding: 24px 16px 16px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; }
+.kat-footer-nama { font-family: var(--font-display); text-transform: uppercase; font-size: 1.2rem; color: #fff; }
+.kat-footer-alamat { font-size: 0.82rem; opacity: 0.75; max-width: 46ch; white-space: pre-line; }
+.kat-sosmed { display: flex; flex-wrap: wrap; gap: 10px; }
+.kat-sosmed a {
+  width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 1.15rem;
+  color: var(--mint); border: 1px solid var(--mint); border-radius: var(--radius); text-decoration: none;
+}
+.kat-sosmed a:hover { background: var(--mint); color: var(--obsidian); }
+.kat-footer-bawah {
+  max-width: 1200px; margin: 0 auto; padding: 12px 16px calc(14px + var(--safe-bottom)); border-top: 1px solid rgba(255,255,255,0.12);
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; font-family: var(--font-mono); font-size: 0.74rem;
+}
+.kat-login-btn {
+  background: transparent; color: rgba(255,255,255,0.8); border: 1px solid rgba(255,255,255,0.35); border-radius: var(--radius);
+  padding: 5px 12px; font-family: var(--font-mono); font-size: 0.74rem;
+}
+.kat-login-btn:hover { color: var(--obsidian); background: var(--mint); border-color: var(--mint); }
+.auth-card a { color: var(--text-primary); font-family: var(--font-mono); }

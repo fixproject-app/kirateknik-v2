@@ -9,16 +9,62 @@
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" />
-  <link rel="stylesheet" href="style.css?v=12" />
+  <link rel="stylesheet" href="style.css?v=13" />
 </head>
 <body data-theme="light">
-  <div id="loading-overlay" class="loading-overlay d-none">
+  <div id="loading-overlay" class="loading-overlay">
     <div class="spinner-border text-light" role="status"></div>
   </div>
   <div id="toast-container" class="toast-container"></div>
 
+  <!-- ============ KATALOG PUBLIK (tanpa login) ============ -->
+  <div id="section-katalog" class="app-section katalog d-none">
+    <header class="kat-topbar">
+      <div class="kat-brand"><span id="kat-logo" class="kat-logo"><i class="bi bi-tools"></i></span><span id="kat-nama">Kira Teknik</span></div>
+      <a id="kat-wa-top" class="btn btn-primary btn-sm d-none" target="_blank" rel="noopener"><i class="bi bi-whatsapp"></i> Hubungi Kami</a>
+    </header>
+
+    <section id="kat-hero" class="kat-hero">
+      <div id="kat-hero-track" class="kat-hero-track"></div>
+      <div class="kat-hero-overlay">
+        <h1 id="kat-hero-judul">Mesin Produksi Hasil Restorasi Berkualitas</h1>
+        <p id="kat-hero-sub"></p>
+        <a href="#kat-daftar" class="btn btn-primary">Lihat Katalog <i class="bi bi-arrow-down"></i></a>
+      </div>
+      <div id="kat-hero-dots" class="kat-dots"></div>
+    </section>
+
+    <main class="kat-main" id="kat-daftar">
+      <div class="kat-toolbar">
+        <div class="kat-search"><i class="bi bi-search"></i><input type="search" id="kat-cari" class="form-control" placeholder="Cari nama mesin..." /></div>
+        <select id="kat-kategori" class="form-select"><option value="">Semua kategori</option></select>
+        <select id="kat-urut" class="form-select">
+          <option value="terbaru">Terbaru</option>
+          <option value="terlama">Terlama</option>
+          <option value="nama">Nama A-Z</option>
+        </select>
+      </div>
+      <div id="kat-info" class="kat-info"></div>
+      <div id="kat-grid" class="kat-grid"></div>
+    </main>
+
+    <footer class="kat-footer">
+      <div class="kat-footer-inner">
+        <div class="kat-footer-brand">
+          <div id="kat-footer-nama" class="kat-footer-nama">Kira Teknik</div>
+          <div id="kat-footer-alamat" class="kat-footer-alamat"></div>
+        </div>
+        <div id="kat-sosmed" class="kat-sosmed"></div>
+      </div>
+      <div class="kat-footer-bawah">
+        <span>Copyright &copy; 2026 FIX PROJECT DEVELOPMENT</span>
+        <button type="button" class="kat-login-btn" id="btn-ke-login"><i class="bi bi-box-arrow-in-right"></i> Login</button>
+      </div>
+    </footer>
+  </div>
+
   <!-- ============ AUTH SECTION ============ -->
-  <div id="section-login" class="app-section auth-wrapper">
+  <div id="section-login" class="app-section auth-wrapper d-none">
     <div class="auth-card">
       <div class="text-center mb-3">
         <span id="logo-login" class="brand-icon"><i class="bi bi-tools"></i></span>
@@ -37,6 +83,7 @@
         </div>
         <button type="submit" class="btn btn-primary w-100">Masuk</button>
       </form>
+      <div class="text-center mt-3"><a href="#" id="btn-ke-katalog" class="small"><i class="bi bi-arrow-left"></i> Kembali ke katalog</a></div>
     </div>
   </div>
 
@@ -69,7 +116,10 @@
         <a href="#" class="nav-link" data-section="sparepart"><i class="bi bi-boxes"></i> Katalog Sparepart</a>
         <a href="#" class="nav-link" data-section="mekanik" data-owner-only><i class="bi bi-people"></i> Master Mekanik</a>
         <a href="#" class="nav-link" data-section="akun" data-owner-only><i class="bi bi-person-gear"></i> Kelola Akun</a>
+        <a href="#" class="nav-link" data-section="asset" data-owner-only><i class="bi bi-box-seam"></i> Asset Part</a>
         <a href="#" class="nav-link" data-section="invoice" data-owner-only><i class="bi bi-file-earmark-pdf"></i> Rekap / Invoice</a>
+        <a href="#" class="nav-link" data-section="pengaturan" data-owner-only><i class="bi bi-gear"></i> Pengaturan</a>
+        <a href="?katalog=1" target="_blank" class="nav-link" data-owner-only id="link-lihat-katalog"><i class="bi bi-shop-window"></i> Lihat Katalog</a>
       </nav>
       <div class="sidebar-backdrop d-none" id="sidebar-backdrop"></div>
 
@@ -90,6 +140,11 @@
             <div class="kpi-card">
               <div class="kpi-label">Total Tahap Dikerjakan</div>
               <div class="kpi-value" id="kpi-total-tahap">0</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">Total Aset Part</div>
+              <div class="kpi-value" id="kpi-aset-part">Rp 0</div>
+              <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="btn-detail-aset"><i class="bi bi-list-ul"></i> Detail</button>
             </div>
           </div>
 
@@ -124,31 +179,7 @@
         <section id="section-mesin" class="app-content-section d-none">
           <h2 class="section-title">Tambah Mesin Baru</h2>
           <form id="form-mesin" class="card-form">
-            <div class="mb-3">
-              <label class="form-label">Foto Mesin</label>
-              <div class="foto-actions">
-                <button type="button" class="btn btn-outline-primary" id="btn-foto-kamera"><i class="bi bi-camera"></i> Ambil Foto</button>
-                <button type="button" class="btn btn-outline-secondary" id="btn-foto-galeri"><i class="bi bi-images"></i> Pilih dari Galeri</button>
-              </div>
-              <input type="file" accept="image/*" capture="environment" id="mesin-foto-kamera" class="d-none" />
-              <input type="file" accept="image/*" id="mesin-foto-galeri" class="d-none" />
-              <img id="mesin-foto-preview" class="foto-preview d-none" />
-              <button type="button" class="btn btn-link btn-sm text-danger ps-0 d-none" id="btn-foto-hapus">Hapus foto</button>
-            </div>
-            <div class="mb-3">
-              <label class="form-label">Nama Mesin</label>
-              <input type="text" class="form-control" id="mesin-nama" required />
-            </div>
-            <div class="row">
-              <div class="col-6 mb-3">
-                <label class="form-label">Harga Beli (Rp)</label>
-                <input type="number" min="0" step="1000" class="form-control" id="mesin-harga" required />
-              </div>
-              <div class="col-6 mb-3">
-                <label class="form-label">Tanggal Pembelian</label>
-                <input type="date" class="form-control" id="mesin-tanggal" required />
-              </div>
-            </div>
+            <div id="form-mesin-fields"></div>
             <button type="submit" class="btn btn-primary w-100">Simpan Mesin</button>
           </form>
         </section>
@@ -173,7 +204,7 @@
               <label class="form-label">Deskripsi Pengerjaan</label>
               <textarea class="form-control" id="tahap-deskripsi" rows="2"></textarea>
             </div>
-            <label class="form-label">Mekanik &amp; Ongkos</label>
+            <label class="form-label">Mekanik &amp; Ongkos <span class="text-muted">(boleh dikosongkan)</span></label>
             <div id="list-mekanik-tahap" class="sparepart-list mb-2"></div>
             <button type="button" class="btn btn-outline-secondary btn-sm mb-3" id="btn-tambah-mekanik-row">
               <i class="bi bi-plus-lg"></i> Tambah Mekanik
@@ -184,6 +215,9 @@
             <button type="button" class="btn btn-outline-secondary btn-sm mb-3" id="btn-tambah-sparepart-row">
               <i class="bi bi-plus-lg"></i> Tambah Sparepart
             </button>
+
+            <label class="form-label">Foto Pengerjaan <span class="text-muted">(maks 4, otomatis ada hari &amp; tanggal)</span></label>
+            <div id="tahap-foto-wrap" class="mb-3"></div>
 
             <div class="total-box mb-3">
               <span>Total Biaya Tahap</span>
@@ -256,6 +290,104 @@
             <button type="submit" class="btn btn-primary w-100">Buat Akun Mekanik</button>
           </form>
           <div id="list-akun"></div>
+        </section>
+
+        <!-- Asset Part (Owner) -->
+        <section id="section-asset" class="app-content-section d-none">
+          <h2 class="section-title">Asset Part</h2>
+          <div class="status-tabs" id="asset-tabs">
+            <button type="button" class="status-tab active" data-tab="stok">Part Stok</button>
+            <button type="button" class="status-tab" data-tab="masuk">Part Masuk</button>
+            <button type="button" class="status-tab" data-tab="keluar">Part Keluar</button>
+            <button type="button" class="status-tab" data-tab="riwayat">Riwayat</button>
+          </div>
+
+          <div id="asset-tab-stok">
+            <input type="search" class="form-control form-control-sm filter-input mb-2" id="asset-cari" placeholder="Cari part..." />
+            <div class="table-responsive">
+              <table class="table table-hover align-middle">
+                <thead><tr><th>Nama Part</th><th class="text-center">Qty</th><th class="text-end">Harga</th><th class="text-end">Jumlah</th><th></th></tr></thead>
+                <tbody id="tbody-asset-stok"></tbody>
+                <tfoot><tr><th colspan="3">Total</th><th class="text-end" id="asset-grand-total">Rp 0</th><th></th></tr></tfoot>
+              </table>
+            </div>
+            <div class="form-text">Jumlah = Qty &times; Harga satuan. Total = jumlah seluruh part.</div>
+          </div>
+
+          <div id="asset-tab-masuk" class="d-none">
+            <form id="form-asset-masuk" class="card-form mb-3">
+              <div class="mb-3"><label class="form-label">Part</label><select class="form-select" id="am-part"></select></div>
+              <div class="mb-3 d-none" id="am-nama-wrap"><label class="form-label">Nama Part Baru</label><input type="text" class="form-control" id="am-nama" /></div>
+              <div class="row">
+                <div class="col-4 mb-3"><label class="form-label">Qty</label><input type="number" min="1" step="1" class="form-control" id="am-qty" required /></div>
+                <div class="col-8 mb-3"><label class="form-label">Harga Satuan (Rp)</label><input type="number" min="0" step="500" class="form-control" id="am-harga" /></div>
+              </div>
+              <div class="mb-3"><label class="form-label">Tanggal</label><input type="date" class="form-control" id="am-tanggal" /></div>
+              <div class="mb-3"><label class="form-label">Keterangan</label><input type="text" class="form-control" id="am-ket" placeholder="mis. beli di toko ..." /></div>
+              <button type="submit" class="btn btn-primary w-100">Simpan Part Masuk</button>
+            </form>
+            <h3 class="section-title">Transaksi Masuk</h3>
+            <div id="list-asset-masuk"></div>
+          </div>
+
+          <div id="asset-tab-keluar" class="d-none">
+            <form id="form-asset-keluar" class="card-form mb-3">
+              <div class="mb-3"><label class="form-label">Part</label><select class="form-select" id="ak-part" required></select></div>
+              <div class="mb-3"><label class="form-label">Qty Keluar <span class="text-muted" id="ak-stok"></span></label><input type="number" min="1" step="1" class="form-control" id="ak-qty" required /></div>
+              <div class="mb-3"><label class="form-label">Tanggal</label><input type="date" class="form-control" id="ak-tanggal" /></div>
+              <div class="mb-3"><label class="form-label">Keterangan</label><input type="text" class="form-control" id="ak-ket" placeholder="mis. dipakai untuk mesin ..." /></div>
+              <button type="submit" class="btn btn-primary w-100">Simpan Part Keluar</button>
+            </form>
+            <h3 class="section-title">Transaksi Keluar</h3>
+            <div id="list-asset-keluar"></div>
+          </div>
+
+          <div id="asset-tab-riwayat" class="d-none">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle">
+                <thead><tr><th>Tanggal</th><th>Jenis</th><th>Part</th><th class="text-center">Qty</th><th>Keterangan</th></tr></thead>
+                <tbody id="tbody-asset-riwayat"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Pengaturan (Owner) -->
+        <section id="section-pengaturan" class="app-content-section d-none">
+          <h2 class="section-title">Pengaturan</h2>
+          <form id="form-pengaturan" class="card-form" style="max-width:720px">
+            <h3 class="pengaturan-sub">Identitas</h3>
+            <div class="mb-3"><label class="form-label">Nama Usaha</label><input type="text" class="form-control" id="pg-nama_usaha" /></div>
+            <div class="mb-3"><label class="form-label">Alamat</label><textarea class="form-control" id="pg-alamat" rows="2"></textarea></div>
+            <div class="mb-3">
+              <label class="form-label">Logo</label>
+              <div class="d-flex align-items-center gap-3"><img id="pg-logo-preview" class="pg-logo-preview d-none" /><button type="button" class="btn btn-outline-secondary btn-sm" id="btn-pg-logo"><i class="bi bi-upload"></i> Unggah Logo</button><button type="button" class="btn btn-link btn-sm text-danger d-none" id="btn-pg-logo-hapus">Hapus</button></div>
+              <input type="file" accept="image/*" id="pg-logo-file" class="d-none" />
+              <div class="form-text">Dipakai di katalog, watermark foto, dan invoice. Disarankan PNG transparan.</div>
+            </div>
+
+            <h3 class="pengaturan-sub">Banner / Hero Katalog</h3>
+            <div class="mb-3"><label class="form-label">Judul Banner</label><input type="text" class="form-control" id="pg-hero_judul" /></div>
+            <div class="mb-3"><label class="form-label">Sub-judul</label><textarea class="form-control" id="pg-hero_subjudul" rows="2"></textarea></div>
+            <div class="mb-3"><label class="form-label">Gambar Slider Banner <span class="text-muted">(maks 5, auto-slide)</span></label><div id="pg-slides-wrap"></div></div>
+
+            <h3 class="pengaturan-sub">WhatsApp</h3>
+            <div class="mb-3"><label class="form-label">Nomor WhatsApp</label><input type="tel" class="form-control" id="pg-wa_nomor" placeholder="6281234567890" /><div class="form-text">Format internasional tanpa + (awalan 62).</div></div>
+            <div class="mb-3"><label class="form-label">Awalan Pesan</label><input type="text" class="form-control" id="pg-wa_pesan" /><div class="form-text">Nama mesin ditambahkan otomatis di belakangnya.</div></div>
+
+            <h3 class="pengaturan-sub">Media Sosial (footer katalog)</h3>
+            <div class="mb-3"><label class="form-label">Instagram</label><input type="url" class="form-control" id="pg-medsos_instagram" placeholder="https://instagram.com/..." /></div>
+            <div class="mb-3"><label class="form-label">Facebook</label><input type="url" class="form-control" id="pg-medsos_facebook" placeholder="https://facebook.com/..." /></div>
+            <div class="mb-3"><label class="form-label">TikTok</label><input type="url" class="form-control" id="pg-medsos_tiktok" placeholder="https://tiktok.com/@..." /></div>
+            <div class="mb-3"><label class="form-label">YouTube</label><input type="url" class="form-control" id="pg-medsos_youtube" placeholder="https://youtube.com/..." /></div>
+            <div class="mb-3"><label class="form-label">Website</label><input type="url" class="form-control" id="pg-medsos_website" placeholder="https://..." /></div>
+            <div class="mb-3"><label class="form-label">Lokasi (Google Maps)</label><input type="url" class="form-control" id="pg-medsos_maps" placeholder="https://maps.app.goo.gl/..." /></div>
+
+            <h3 class="pengaturan-sub">Watermark Foto Mesin</h3>
+            <div class="mb-3"><label class="form-label">Teks Watermark</label><textarea class="form-control" id="pg-wm_teks" rows="2"></textarea><div class="form-text">Tampil di tengah foto bersama logo (transparan 40%). Berlaku untuk foto yang diunggah setelah ini.</div></div>
+
+            <button type="submit" class="btn btn-primary w-100">Simpan Pengaturan</button>
+          </form>
         </section>
 
         <!-- Rekap / Invoice PDF -->
@@ -389,9 +521,58 @@
     </div>
   </div>
 
+  <!-- Modal Edit Mesin -->
+  <div class="modal fade" id="modal-edit-mesin" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Edit Mesin</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body"><div id="edit-mesin-fields"></div></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+          <button type="button" class="btn btn-primary" id="btn-simpan-edit-mesin">Simpan Perubahan</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Detail Aset Part -->
+  <div class="modal fade" id="modal-aset-detail" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Detail Aset Part</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+          <div class="table-responsive"><table class="table align-middle">
+            <thead><tr><th>Part</th><th class="text-center">Qty</th><th class="text-end">Jumlah</th></tr></thead>
+            <tbody id="tbody-aset-detail"></tbody>
+            <tfoot><tr><th colspan="2">Total</th><th class="text-end" id="aset-detail-total">Rp 0</th></tr></tfoot>
+          </table></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" id="btn-aset-ke-halaman" data-bs-dismiss="modal">Buka Halaman Asset Part</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Detail Mesin (katalog publik) -->
+  <div class="modal fade" id="modal-katalog-detail" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title" id="kd-judul">Mesin</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body" id="kd-body"></div>
+        <div class="modal-footer">
+          <a id="kd-wa" class="btn btn-primary" target="_blank" rel="noopener"><i class="bi bi-whatsapp"></i> Tanya Harga via WhatsApp</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=12"></script>
-  <script src="app.js?v=12"></script>
+  <script src="config.js?v=13"></script>
+  <script src="app.js?v=13"></script>
+  <script src="fitur.js?v=13"></script>
+  <script src="katalog.js?v=13"></script>
 </body>
 </html>

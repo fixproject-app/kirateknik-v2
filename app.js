@@ -72,6 +72,11 @@ async function callSupabase(promise, successMessage) {
   }
 }
 
+// Tanggal (YYYY-MM-DD) menurut jam perangkat, bukan UTC, supaya tidak mundur sehari di WIB
+function tanggalLokal(d = new Date()) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 // ── Helper: Format Rupiah ──
 function formatRupiah(angka) {
   const n = Number(angka) || 0;
@@ -81,7 +86,7 @@ function formatRupiah(angka) {
 function rentangTanggal(preset) {
   const hariIni = new Date(); hariIni.setHours(0, 0, 0, 0);
   const d = (n) => { const x = new Date(hariIni); x.setDate(x.getDate() + n); return x; };
-  const iso = (x) => x.toISOString().slice(0, 10);
+  const iso = tanggalLokal;
   const hari = hariIni.getDay(); // 0=Minggu .. 6=Sabtu
   if (preset === 'minggu-ini') {
     const senin = d(hari === 0 ? -6 : 1 - hari);
@@ -110,10 +115,10 @@ const LOGO_URL = _cfg.LOGO_URL || '';
 
 // Terapkan logo kustom (kalau diisi di config.js) ke Login, Sidebar, dan kop Invoice.
 // Kalau kosong, ikon bawaan tetap dipakai.
-function terapkanLogo() {
-  if (!LOGO_URL) return;
-  document.querySelectorAll('#logo-login, #logo-sidebar, #logo-invoice').forEach(slot => {
-    slot.innerHTML = `<img src="${LOGO_URL}" alt="Logo" />`;
+function terapkanLogo(url = LOGO_URL) {
+  if (!url) return;
+  document.querySelectorAll('#logo-login, #logo-sidebar, #logo-invoice, #kat-logo').forEach(slot => {
+    slot.innerHTML = `<img src="${url}" alt="Logo" />`;
   });
 }
 terapkanLogo();
@@ -137,9 +142,22 @@ document.getElementById('btn-logout').addEventListener('click', async () => {
 
 let initializedUserId = null;
 
-if (sb && CONFIG_OK) {
+// Dijalankan setelah SEMUA file script termuat (app.js, fitur.js, katalog.js)
+function mulaiAuth() {
+  if (!(sb && CONFIG_OK)) {
+    hideLoading();
+    document.getElementById('section-login').classList.remove('d-none');
+    cekKonfigurasi();
+    return;
+  }
   sb.auth.onAuthStateChange((event, session) => {
     if (session) {
+      // Mode pratinjau katalog (?katalog=1): tetap tampilkan katalog walau sedang login
+      if (MODE_KATALOG) {
+        if (!document.getElementById('section-login').classList.contains('d-none')) { location.replace(location.pathname); return; }
+        tampilkanKatalog();
+        return;
+      }
       // Supabase memicu event ini lagi setiap halaman kembali aktif (mis. selesai memakai kamera).
       // Jika user-nya sama, abaikan agar halaman yang sedang dibuka tidak berpindah ke Dashboard.
       if (initializedUserId === session.user.id) return;
@@ -150,10 +168,12 @@ if (sb && CONFIG_OK) {
       currentProfile = null;
       if (realtimeChannel) { sb.removeChannel(realtimeChannel); realtimeChannel = null; }
       document.getElementById('app-shell').classList.add('d-none');
-      document.getElementById('section-login').classList.remove('d-none');
+      document.getElementById('section-login').classList.add('d-none');
+      tampilkanKatalog();
     }
   });
 }
+window.addEventListener('load', mulaiAuth);
 
 async function initAppForUser(userId) {
   const result = await callSupabase(sb.from('profiles').select('*').eq('id', userId).single());
@@ -162,15 +182,17 @@ async function initAppForUser(userId) {
   currentProfile = result.data;
   const isOwner = currentProfile.role === 'owner';
   document.getElementById('section-login').classList.add('d-none');
+  document.getElementById('section-katalog').classList.add('d-none');
   document.getElementById('app-shell').classList.remove('d-none');
   document.getElementById('user-info').textContent = `${currentProfile.username || currentProfile.nama} (${currentProfile.role})`;
   document.querySelectorAll('[data-owner-only]').forEach(el => el.classList.toggle('d-none', !isOwner));
 
-  await loadAllReferenceData();
+  await Promise.all([loadAllReferenceData(), loadPengaturan()]);
+  terapkanLogo(logoEfektif());
 
   let tersimpan = null;
   try { tersimpan = sessionStorage.getItem('kt_section'); } catch (_) {}
-  const boleh = isOwner ? ['dashboard', 'mesin', 'tahap', 'sparepart', 'mekanik', 'akun', 'invoice'] : MEKANIK_SECTIONS;
+  const boleh = isOwner ? ['dashboard', 'mesin', 'tahap', 'sparepart', 'mekanik', 'akun', 'invoice', 'asset', 'pengaturan'] : MEKANIK_SECTIONS;
   const tujuan = boleh.includes(tersimpan) ? tersimpan : (isOwner ? 'dashboard' : 'tahap');
   navigateTo(tujuan);
   if (tujuan === 'mesin' && restoreDraftMesin()) {
@@ -192,7 +214,7 @@ document.querySelectorAll('.sidebar .nav-link').forEach(link => {
 
 const SECTION_TITLES = {
   dashboard: 'Dashboard', mesin: 'Tambah Mesin', tahap: 'Tambah Tahap Restorasi',
-  sparepart: 'Katalog Sparepart', rekap: 'Rekap Biaya Mesin', mekanik: 'Master Mekanik', akun: 'Kelola Akun', invoice: 'Rekap / Invoice',
+  sparepart: 'Katalog Sparepart', rekap: 'Rekap Biaya Mesin', mekanik: 'Master Mekanik', akun: 'Kelola Akun', invoice: 'Rekap / Invoice', asset: 'Asset Part', pengaturan: 'Pengaturan',
 };
 const MEKANIK_SECTIONS = ['tahap', 'sparepart'];
 
@@ -213,6 +235,8 @@ function navigateTo(sectionId) {
   if (sectionId === 'mekanik') renderMekanikTable();
   if (sectionId === 'akun') loadAkun();
   if (sectionId === 'invoice') resetInvoice();
+  if (sectionId === 'asset') loadAsset();
+  if (sectionId === 'pengaturan') isiFormPengaturan();
 }
 
 // ── Sidebar mobile (off-canvas) ──
@@ -281,6 +305,7 @@ async function loadDashboardData() {
     ? `Mesin dengan biaya restorasi tertinggi saat ini: "${termahal.nama_mesin}" sebesar ${formatRupiah(biayaRestorasi(termahal))}.`
     : 'Belum ada data mesin untuk dianalisis.';
   renderMesinGrid();
+  muatKpiAset();
 }
 
 renderLaporanMekanik();
@@ -301,6 +326,7 @@ function renderMesinGrid() {
     const fotoEl = r.foto_url ? `<img src="${r.foto_url}" alt="${r.nama_mesin}" />` : `<div class="no-foto"><i class="bi bi-image"></i></div>`;
     return `
       <div class="mesin-card" data-id="${r.mesin_id}">
+        <button type="button" class="mesin-card-edit" data-edit-mesin="${r.mesin_id}" title="Edit mesin"><i class="bi bi-pencil-fill"></i></button>
         ${fotoEl}
         <div class="mesin-card-body">
           <div class="mesin-card-name">${r.nama_mesin}</div>
@@ -311,6 +337,7 @@ function renderMesinGrid() {
       </div>`;
   }).join('') || '<p class="text-muted">Tidak ada mesin di kelompok ini.</p>';
   grid.querySelectorAll('.mesin-card').forEach(card => card.addEventListener('click', () => openRekapMesin(card.dataset.id)));
+  grid.querySelectorAll('[data-edit-mesin]').forEach(btn => btn.addEventListener('click', (ev) => { ev.stopPropagation(); bukaEditMesin(btn.dataset.editMesin); }));
 }
 document.getElementById('filter-mesin').addEventListener('input', renderMesinGrid);
 
@@ -357,107 +384,7 @@ async function renderLaporanMekanik() {
 
 
 
-// ============================================================
-// FORM: TAMBAH MESIN
-// ============================================================
-let fotoTerpilih = null;
-const DRAFT_KEY = 'kt_draft_mesin';
-
-function resetFormMesin() {
-  document.getElementById('form-mesin').reset();
-  setFotoMesin(null);
-  document.getElementById('mesin-tanggal').value = new Date().toISOString().slice(0, 10);
-}
-
-// Menampilkan / menghapus foto yang dipilih (dari kamera maupun galeri)
-function setFotoMesin(file) {
-  fotoTerpilih = file;
-  const preview = document.getElementById('mesin-foto-preview');
-  const btnHapus = document.getElementById('btn-foto-hapus');
-  if (preview.dataset.url) URL.revokeObjectURL(preview.dataset.url);
-  if (file) {
-    const url = URL.createObjectURL(file);
-    preview.src = url;
-    preview.dataset.url = url;
-    preview.classList.remove('d-none');
-    btnHapus.classList.remove('d-none');
-  } else {
-    preview.removeAttribute('src');
-    preview.dataset.url = '';
-    preview.classList.add('d-none');
-    btnHapus.classList.add('d-none');
-    document.getElementById('mesin-foto-kamera').value = '';
-    document.getElementById('mesin-foto-galeri').value = '';
-  }
-}
-
-document.getElementById('btn-foto-kamera').addEventListener('click', () => document.getElementById('mesin-foto-kamera').click());
-document.getElementById('btn-foto-galeri').addEventListener('click', () => document.getElementById('mesin-foto-galeri').click());
-document.getElementById('btn-foto-hapus').addEventListener('click', () => setFotoMesin(null));
-['mesin-foto-kamera', 'mesin-foto-galeri'].forEach(id => {
-  document.getElementById(id).addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file) setFotoMesin(file);
-  });
-});
-
-// Draft isian teks: berjaga-jaga jika HP memuat ulang halaman saat kamera dibuka
-function simpanDraftMesin() {
-  try {
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
-      nama: document.getElementById('mesin-nama').value,
-      harga: document.getElementById('mesin-harga').value,
-      tanggal: document.getElementById('mesin-tanggal').value,
-    }));
-  } catch (_) {}
-}
-function restoreDraftMesin() {
-  try {
-    const raw = sessionStorage.getItem(DRAFT_KEY);
-    if (!raw) return false;
-    const d = JSON.parse(raw);
-    document.getElementById('mesin-nama').value = d.nama || '';
-    document.getElementById('mesin-harga').value = d.harga || '';
-    if (d.tanggal) document.getElementById('mesin-tanggal').value = d.tanggal;
-    return Boolean(d.nama || d.harga);
-  } catch (_) { return false; }
-}
-['mesin-nama', 'mesin-harga', 'mesin-tanggal'].forEach(id =>
-  document.getElementById(id).addEventListener('input', simpanDraftMesin));
-
-document.getElementById('form-mesin').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const namaMesin = document.getElementById('mesin-nama').value;
-  const hargaBeli = document.getElementById('mesin-harga').value;
-  const tanggalBeli = document.getElementById('mesin-tanggal').value;
-  const fotoFile = fotoTerpilih;
-
-  let fotoUrl = null;
-  if (fotoFile) {
-    const namaAman = (fotoFile.name || 'foto.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
-    const path = `${currentProfile.id}/${Date.now()}_${namaAman}`;
-    const uploadResult = await callSupabase(sb.storage.from(BUCKET_FOTO).upload(path, fotoFile));
-    if (!uploadResult.success) return;
-    fotoUrl = sb.storage.from(BUCKET_FOTO).getPublicUrl(path).data.publicUrl;
-  }
-
-  const result = await callSupabase(
-    sb.from('mesin').insert({
-      nama_mesin: namaMesin,
-      harga_beli: hargaBeli,
-      tanggal_pembelian: tanggalBeli,
-      foto_url: fotoUrl,
-      dibuat_oleh: currentProfile.id,
-    }),
-    'Mesin berhasil ditambahkan.'
-  );
-  if (result.success) {
-    try { sessionStorage.removeItem(DRAFT_KEY); } catch (_) {}
-    await loadAllReferenceData();
-    resetFormMesin();
-    navigateTo('dashboard');
-  }
-});
+// FORM: TAMBAH MESIN & EDIT MESIN -> lihat fitur.js
 
 // ============================================================
 // FORM: TAMBAH TAHAP RESTORASI
@@ -469,7 +396,7 @@ function resetFormTahap(mesinDipertahankan) {
   const tombolSimpan = document.querySelector('#form-tahap button[type=submit]');
   if (tombolSimpan) tombolSimpan.textContent = 'Simpan Tahap Restorasi';
   document.getElementById('form-tahap').reset();
-  document.getElementById('tahap-tanggal').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('tahap-tanggal').value = tanggalLokal();
   document.getElementById('tahap-mesin').innerHTML = '<option value="">-- Pilih mesin --</option>'
     + cachedMesin.map(m => `<option value="${m.id}">${m.nama_mesin}</option>`).join('');
   document.getElementById('tahap-mesin').value = mesinDipertahankan || '';
@@ -482,6 +409,7 @@ function resetFormTahap(mesinDipertahankan) {
   sparepartRowCount = 0;
   addSparepartRow();
   updateTahapTotalPreview();
+  if (uploaderTahap) uploaderTahap.reset();
 }
 
 function tampilkanFotoMesinTahap() {
@@ -508,7 +436,7 @@ async function renderRiwayatTahap(mesinId) {
   list.innerHTML = '<p class="text-muted small">Memuat riwayat...</p>';
 
   const { data, error } = await sb.from('tahap_restorasi')
-    .select('*, tahap_sparepart(*), tahap_mekanik(*)')
+    .select('*, tahap_sparepart(*), tahap_mekanik(*), tahap_foto(*)')
     .eq('mesin_id', mesinId)
     .order('tanggal_pengerjaan', { ascending: false })
     .order('created_at', { ascending: false });
@@ -542,6 +470,7 @@ async function renderRiwayatTahap(mesinId) {
         <div class="text-muted small mb-1">${t.deskripsi || '-'}</div>
         <div class="small">Mekanik: ${mekanikNama}</div>
         ${sparepartHtml ? `<ul class="small mb-0 mt-1">${sparepartHtml}</ul>` : ''}
+        ${fotoTahapHtml(t)}
       </div>`;
   }).join('');
 }
@@ -645,8 +574,11 @@ document.getElementById('form-tahap').addEventListener('submit', async (e) => {
   document.querySelectorAll('#list-mekanik-tahap .sparepart-row').forEach(row => {
     const pilihan = row.querySelector('.mk-select').value;
     const namaBaru = row.querySelector('.mk-baru').value.trim();
-    const ongkos = Number(row.querySelector('.mk-ongkos').value) || 0;
+    const ongkosTeks = row.querySelector('.mk-ongkos').value;
+    const ongkos = Number(ongkosTeks) || 0;
     if (pilihan === '') return;
+    // Baris mekanik tanpa ongkos diabaikan: tahap boleh hanya berisi sparepart/foto
+    if (pilihan !== '__baru__' && ongkosTeks === '') return;
     if (pilihan === '__baru__' && !namaBaru) { pesanError = 'Isi nama mekanik baru.'; return; }
     mekanikRows.push({ pilihan, namaBaru, ongkos });
   });
@@ -664,7 +596,11 @@ document.getElementById('form-tahap').addEventListener('submit', async (e) => {
     }
   });
   if (pesanError) { showToast(pesanError, 'error'); return; }
-  if (mekanikRows.length === 0) { showToast('Pilih minimal satu mekanik.', 'error'); return; }
+  const adaFotoBaru = uploaderTahap && uploaderTahap.items.length > 0;
+  if (!deskripsi.trim() && mekanikRows.length === 0 && sparepartRows.length === 0 && !adaFotoBaru) {
+    showToast('Isi minimal salah satu: deskripsi, sparepart, mekanik, atau foto.', 'error');
+    return;
+  }
 
   // Mekanik baru dimasukkan ke master data lebih dulu
   for (const r of mekanikRows) {
@@ -695,14 +631,18 @@ document.getElementById('form-tahap').addEventListener('submit', async (e) => {
     tahapId = tahapResult.data.id;
   }
 
-  const mk = await callSupabase(sb.from('tahap_mekanik').insert(
-    mekanikRows.map(r => ({ tahap_id: tahapId, mekanik_id: r.mekanikId, ongkos: r.ongkos }))));
-  if (!mk.success) return;
+  if (mekanikRows.length > 0) {
+    const mk = await callSupabase(sb.from('tahap_mekanik').insert(
+      mekanikRows.map(r => ({ tahap_id: tahapId, mekanik_id: r.mekanikId, ongkos: r.ongkos }))));
+    if (!mk.success) return;
+  }
 
   if (sparepartRows.length > 0) {
     const sp = await callSupabase(sb.from('tahap_sparepart').insert(sparepartRows.map(r => ({ ...r, tahap_id: tahapId }))));
     if (!sp.success) return;
   }
+
+  await simpanFotoTahap(tahapId);
 
   showToast(sedangEdit ? 'Perubahan tahap berhasil disimpan.' : 'Tahap restorasi berhasil disimpan.', 'success');
   editTahapId = null;
@@ -923,7 +863,7 @@ async function loadRekapMesin(mesinId) {
   const [mesinRes, tahapRes] = await Promise.all([
     sb.from('mesin').select('*').eq('id', mesinId).single(),
     sb.from('tahap_restorasi')
-      .select('*, tahap_sparepart(*), tahap_mekanik(*)')
+      .select('*, tahap_sparepart(*), tahap_mekanik(*), tahap_foto(*)')
       .eq('mesin_id', mesinId)
       .order('tanggal_pengerjaan', { ascending: false }),
   ]);
@@ -960,12 +900,13 @@ async function loadRekapMesin(mesinId) {
     return `
       <div class="rekap-tahap-item" data-nama="${(t.deskripsi || '') + mekanikNama}">
         <div class="d-flex justify-content-between">
-          <strong>${t.tanggal_pengerjaan} — ${mekanikNama}</strong>
+          <strong>${t.tanggal_pengerjaan}${mekanikNama !== '-' ? ' — ' + mekanikNama : ''}</strong>
           <span class="tahap-total">${formatRupiah(totalTahap)}</span>
         </div>
         <div class="text-muted small mb-1">${t.deskripsi || '-'}</div>
         <div class="small">Ongkos kerja: ${formatRupiah(t.ongkos_kerja)}</div>
         ${sparepartHtml ? `<ul class="small mb-0 mt-1">${sparepartHtml}</ul>` : ''}
+        ${fotoTahapHtml(t)}
         <div class="d-flex gap-2 mt-2">
           <button class="btn btn-outline-secondary btn-sm" data-edit-tahap="${t.id}"><i class="bi bi-pencil"></i> Edit</button>
           <button class="btn btn-outline-danger btn-sm" data-hapus-tahap="${t.id}"><i class="bi bi-trash"></i> Hapus</button>
@@ -982,11 +923,12 @@ async function loadRekapMesin(mesinId) {
     .map(s => `<button class="btn btn-outline-primary btn-sm" data-set-status="${s}">Tandai ${STATUS_LABEL[s].replace('Mesin ', '')}</button>`);
   if (mesin.status_manual) tombol.push('<button class="btn btn-outline-secondary btn-sm" data-set-status="">Kembalikan ke otomatis</button>');
   document.getElementById('rekap-status').innerHTML =
-    `<div class="mb-2">Status: <strong>${STATUS_LABEL[statusSekarang]}</strong></div><div class="d-flex flex-wrap gap-2">${tombol.join('')}<button class="btn btn-outline-danger btn-sm" id="btn-hapus-mesin"><i class="bi bi-trash"></i> Hapus Mesin</button></div>`;
+    `<div class="mb-2">Status: <strong>${STATUS_LABEL[statusSekarang]}</strong></div><div class="d-flex flex-wrap gap-2">${tombol.join('')}<button class="btn btn-outline-secondary btn-sm" id="btn-edit-mesin"><i class="bi bi-pencil"></i> Edit Mesin</button><button class="btn btn-outline-danger btn-sm" id="btn-hapus-mesin"><i class="bi bi-trash"></i> Hapus Mesin</button></div>`;
   document.querySelectorAll('[data-set-status]').forEach(b => b.addEventListener('click', async () => {
     const r = await callSupabase(sb.from('mesin').update({ status_manual: b.dataset.setStatus || null }).eq('id', mesinId), 'Status mesin diperbarui.');
     if (r.success) loadRekapMesin(mesinId);
   }));
+  document.getElementById('btn-edit-mesin').addEventListener('click', () => bukaEditMesin(mesinId));
   document.getElementById('btn-hapus-mesin').addEventListener('click', () => hapusMesin(mesinId, mesin.nama_mesin));
   document.getElementById('rekap-jumlah-tahap').textContent = tahapList.length;
   document.getElementById('rekap-tahap-list').innerHTML = rowsHtml;
@@ -1038,6 +980,7 @@ function bukaEditTahap(tahapId, tahapList) {
     if (sp.harga_terpakai != null) row.querySelector('.sp-harga').value = sp.harga_terpakai;
   });
   updateTahapTotalPreview();
+  uploaderTahap.setItems((t.tahap_foto || []).map(f => ({ id: f.id, url: f.url, preview: f.url, diambil: f.diambil_pada })));
 
   const form = document.getElementById('form-tahap');
   form.querySelector('button[type=submit]').textContent = 'Simpan Perubahan';
@@ -1098,8 +1041,8 @@ async function renderInvoice(mesinId) {
   const tahapList = tahapRes.data || [];
   document.getElementById('invoice-sheet').classList.remove('d-none');
 
-  document.getElementById('invoice-nama-usaha').textContent = NAMA_USAHA;
-  document.getElementById('invoice-alamat').textContent = ALAMAT_USAHA;
+  document.getElementById('invoice-nama-usaha').textContent = namaUsaha();
+  document.getElementById('invoice-alamat').textContent = alamatUsaha();
   document.getElementById('invoice-tanggal-cetak').textContent = 'Dicetak: ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
   document.getElementById('invoice-foto-mesin').src = mesin.foto_url || '';
