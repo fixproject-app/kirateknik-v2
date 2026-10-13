@@ -553,3 +553,40 @@ tfoot th { border-top: 2px solid var(--obsidian); background: var(--bg-secondary
 .rb-ringkasan .rb-total td { background: #eaf7f2; border-top: 2px solid #111; }
 .rb-peringatan { background: #fff4d6; border: 1px solid #d9a400; color: #5c4400; border-radius: 4px; padding: 8px 12px; font-size: 0.78rem; margin-bottom: 12px; }
 .invoice-jual td { font-weight: 700; }
+
+/* ============================================================
+   Perbaikan kontras tema terang/gelap: modal, header tabel, dropdown
+   (Bootstrap tidak ikut berganti tema karena memakai data-theme milik aplikasi)
+   ============================================================ */
+.modal-content {
+  --bs-modal-bg: var(--bg-surface);
+  --bs-modal-color: var(--text-primary);
+  background-color: var(--bg-surface); color: var(--text-primary);
+}
+.modal-content .form-text, .modal-content .text-muted { color: var(--text-muted) !important; }
+.modal-header, .modal-footer { border-color: var(--border-color); }
+[data-theme="dark"] .btn-close { filter: invert(1) grayscale(1) brightness(1.6); }
+[data-theme="dark"] .modal-content { border-color: var(--mint); box-shadow: 4px 4px 0 var(--mint); }
+
+/* Header tabel selalu terang di atas latar obsidian, di kedua tema */
+.table > thead > tr > th, .table thead th {
+  background: var(--obsidian) !important; color: #ffffff !important; border-color: var(--obsidian);
+}
+[data-theme="dark"] .table > thead > tr > th, [data-theme="dark"] .table thead th { border-bottom: 2px solid var(--mint); }
+.table tfoot th, .table tfoot td { color: var(--text-primary) !important; background: var(--bg-secondary) !important; }
+.table tbody td, .table tbody th { color: var(--text-primary); }
+.table tbody .text-muted, .table tbody .small.text-muted { color: var(--text-muted) !important; }
+
+.dropdown-menu {
+  --bs-dropdown-bg: var(--bg-surface); --bs-dropdown-color: var(--text-primary);
+  --bs-dropdown-link-color: var(--text-primary); --bs-dropdown-link-hover-color: var(--text-primary);
+  --bs-dropdown-link-hover-bg: var(--bg-secondary); --bs-dropdown-border-color: var(--obsidian);
+  background-color: var(--bg-surface); color: var(--text-primary);
+}
+[data-theme="dark"] .dropdown-menu { border-color: var(--mint); }
+.dropdown-item { color: var(--text-primary); }
+.dropdown-item-text { color: var(--text-primary); }
+.form-check-input { border: 2px solid var(--obsidian); }
+[data-theme="dark"] .form-check-input { border-color: var(--mint); background-color: var(--bg-secondary); }
+[data-theme="dark"] .form-check-input:checked { background-color: var(--mint); border-color: var(--mint); }
+.form-control:disabled, .form-select:disabled { background: var(--bg-secondary); color: var(--text-muted); }
