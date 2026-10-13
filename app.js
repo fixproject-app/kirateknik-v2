@@ -97,6 +97,12 @@ function rentangTanggal(preset) {
     const x = new Date(seninLalu); x.setDate(x.getDate() + 5);
     return { mulai: iso(seninLalu), sampai: iso(x) };
   }
+  if (preset === 'bulan-lalu') {
+    return { mulai: tanggalLokal(new Date(hariIni.getFullYear(), hariIni.getMonth() - 1, 1)), sampai: tanggalLokal(new Date(hariIni.getFullYear(), hariIni.getMonth(), 0)) };
+  }
+  if (preset === 'tahun-ini') {
+    return { mulai: tanggalLokal(new Date(hariIni.getFullYear(), 0, 1)), sampai: tanggalLokal(new Date(hariIni.getFullYear(), 11, 31)) };
+  }
   if (preset === 'bulan-ini') {
     const awal = new Date(hariIni.getFullYear(), hariIni.getMonth(), 1);
     const akhir = new Date(hariIni.getFullYear(), hariIni.getMonth() + 1, 0);
@@ -290,6 +296,22 @@ function statusMesin(r) {
   return Number(r.jumlah_tahap) > 0 ? 'restorasi' : 'masuk';
 }
 function biayaRestorasi(r) { return Number(r.total_ongkos_kerja) + Number(r.total_sparepart); }
+function hppMesin(r) { return Number(r.harga_beli) + biayaRestorasi(r); }
+
+// Modal Aktif = HPP (harga beli + restorasi) semua mesin yang BELUM terjual.
+// Omzet bulan ini = jumlah harga jual mesin yang tanggal terjualnya di bulan berjalan.
+function hitungKpiKeuangan() {
+  const aktif = dashboardRows.filter(r => statusMesin(r) !== 'terjual');
+  document.getElementById('kpi-modal-aktif').textContent = formatRupiah(aktif.reduce((s, r) => s + hppMesin(r), 0));
+  document.getElementById('kpi-modal-aktif-sub').textContent = `${aktif.length} mesin belum terjual`;
+  const bln = rentangTanggal('bulan-ini');
+  const terjual = dashboardRows.filter(r => r.status_manual === 'terjual' && r.harga_jual != null && r.tanggal_terjual
+    && r.tanggal_terjual >= bln.mulai && r.tanggal_terjual <= bln.sampai);
+  document.getElementById('kpi-omzet').textContent = formatRupiah(terjual.reduce((s, r) => s + Number(r.harga_jual), 0));
+  const margin = terjual.reduce((s, r) => s + Number(r.harga_jual) - hppMesin(r), 0);
+  document.getElementById('kpi-omzet-sub').textContent = terjual.length
+    ? `${terjual.length} mesin terjual • margin ${formatRupiah(margin)}` : 'Belum ada penjualan bulan ini';
+}
 
 async function loadDashboardData() {
   const result = await callSupabase(sb.from('v_rekap_mesin').select('*').order('nama_mesin', { ascending: true }));
@@ -299,6 +321,7 @@ async function loadDashboardData() {
   document.getElementById('kpi-total-mesin').textContent = dashboardRows.length;
   document.getElementById('kpi-total-biaya').textContent = formatRupiah(dashboardRows.reduce((s, r) => s + biayaRestorasi(r), 0));
   document.getElementById('kpi-total-tahap').textContent = dashboardRows.reduce((s, r) => s + Number(r.jumlah_tahap), 0);
+  hitungKpiKeuangan();
 
   const termahal = [...dashboardRows].sort((a, b) => biayaRestorasi(b) - biayaRestorasi(a))[0];
   document.getElementById('ai-insight').textContent = termahal
@@ -332,6 +355,9 @@ function renderMesinGrid() {
           <div class="mesin-card-name">${r.nama_mesin}</div>
           <div class="mesin-card-line"><span>Harga Beli</span><span>${formatRupiah(r.harga_beli)}</span></div>
           <div class="mesin-card-line"><span>Total Restorasi</span><span>${formatRupiah(restorasi)}</span></div>
+          ${r.status_manual === 'terjual' && r.harga_jual != null ? `
+          <div class="mesin-card-line"><span>Harga Jual</span><span>${formatRupiah(r.harga_jual)}</span></div>
+          <div class="mesin-card-line ${Number(r.harga_jual) - hppMesin(r) < 0 ? 'rugi' : 'untung'}"><span>Margin</span><span>${formatRupiah(Number(r.harga_jual) - hppMesin(r))}</span></div>` : ''}
           <div class="mesin-card-line hpp"><span>Total HPP</span><span>${formatRupiah(Number(r.harga_beli) + restorasi)}</span></div>
         </div>
       </div>`;
@@ -919,18 +945,37 @@ async function loadRekapMesin(mesinId) {
   document.getElementById('rekap-hpp').textContent = formatRupiah(Number(mesin.harga_beli) + totalBiaya);
 
   const statusSekarang = mesin.status_manual || (tahapList.length > 0 ? 'restorasi' : 'masuk');
+  const hppMesinIni = Number(mesin.harga_beli) + totalBiaya;
   const tombol = ['ready', 'terjual'].filter(s => s !== mesin.status_manual)
     .map(s => `<button class="btn btn-outline-primary btn-sm" data-set-status="${s}">Tandai ${STATUS_LABEL[s].replace('Mesin ', '')}</button>`);
+  if (mesin.status_manual === 'terjual') tombol.push('<button class="btn btn-outline-primary btn-sm" data-set-status="ubah-jual"><i class="bi bi-cash-coin"></i> Ubah Harga Jual</button>');
   if (mesin.status_manual) tombol.push('<button class="btn btn-outline-secondary btn-sm" data-set-status="">Kembalikan ke otomatis</button>');
   document.getElementById('rekap-status').innerHTML =
     `<div class="mb-2">Status: <strong>${STATUS_LABEL[statusSekarang]}</strong></div><div class="d-flex flex-wrap gap-2">${tombol.join('')}<button class="btn btn-outline-secondary btn-sm" id="btn-edit-mesin"><i class="bi bi-pencil"></i> Edit Mesin</button><button class="btn btn-outline-danger btn-sm" id="btn-hapus-mesin"><i class="bi bi-trash"></i> Hapus Mesin</button></div>`;
   document.querySelectorAll('[data-set-status]').forEach(b => b.addEventListener('click', async () => {
-    const r = await callSupabase(sb.from('mesin').update({ status_manual: b.dataset.setStatus || null }).eq('id', mesinId), 'Status mesin diperbarui.');
+    const tujuan = b.dataset.setStatus;
+    if (tujuan === 'terjual' || tujuan === 'ubah-jual') {
+      bukaModalTerjual({ mesinId, nama: mesin.nama_mesin, hpp: hppMesinIni, hargaJual: mesin.harga_jual, tanggal: mesin.tanggal_terjual, setelah: () => loadRekapMesin(mesinId) });
+      return;
+    }
+    if (mesin.status_manual === 'terjual' && !confirm('Mesin ini sudah terjual. Mengubah statusnya akan menghapus harga jual dan tanggal terjual yang tercatat. Lanjutkan?')) return;
+    const r = await callSupabase(sb.from('mesin').update({ status_manual: tujuan || null, harga_jual: null, tanggal_terjual: null }).eq('id', mesinId), 'Status mesin diperbarui.');
     if (r.success) loadRekapMesin(mesinId);
   }));
   document.getElementById('btn-edit-mesin').addEventListener('click', () => bukaEditMesin(mesinId));
   document.getElementById('btn-hapus-mesin').addEventListener('click', () => hapusMesin(mesinId, mesin.nama_mesin));
   document.getElementById('rekap-jumlah-tahap').textContent = tahapList.length;
+  const terjualLengkap = mesin.status_manual === 'terjual' && mesin.harga_jual != null;
+  document.getElementById('rekap-jual-card').classList.toggle('d-none', !terjualLengkap);
+  document.getElementById('rekap-margin-card').classList.toggle('d-none', !terjualLengkap);
+  if (terjualLengkap) {
+    const margin = Number(mesin.harga_jual) - hppMesinIni;
+    document.getElementById('rekap-jual').textContent = formatRupiah(mesin.harga_jual);
+    document.getElementById('rekap-tgl-jual').textContent = mesin.tanggal_terjual ? 'Terjual ' + mesin.tanggal_terjual : '';
+    const m = document.getElementById('rekap-margin');
+    m.textContent = formatRupiah(margin);
+    m.classList.toggle('teks-rugi', margin < 0);
+  }
   document.getElementById('rekap-tahap-list').innerHTML = rowsHtml;
 
   // Pasang pendengar klik SETELAH tombolnya benar-benar ada di halaman
@@ -1019,6 +1064,7 @@ window.openFotoModal = openFotoModal;
 // browser menyediakan "Simpan sebagai PDF" pada dialog cetaknya.
 // ============================================================
 function resetInvoice() {
+  if (typeof setTabInvoice === 'function') setTabInvoice('mesin');
   document.getElementById('invoice-mesin').innerHTML = '<option value="">-- Pilih mesin --</option>'
     + cachedMesin.map(m => `<option value="${m.id}">${m.nama_mesin}</option>`).join('');
   document.getElementById('invoice-sheet').classList.add('d-none');
@@ -1080,6 +1126,12 @@ async function renderInvoice(mesinId) {
   document.getElementById('invoice-total').textContent = formatRupiah(totalRestorasi);
   document.getElementById('invoice-harga-beli-2').textContent = formatRupiah(mesin.harga_beli);
   document.getElementById('invoice-hpp').textContent = formatRupiah(Number(mesin.harga_beli) + totalRestorasi);
+  const adaJual = mesin.status_manual === 'terjual' && mesin.harga_jual != null;
+  document.querySelectorAll('.invoice-jual').forEach(tr => tr.classList.toggle('d-none', !adaJual));
+  if (adaJual) {
+    document.getElementById('invoice-jual').textContent = formatRupiah(mesin.harga_jual);
+    document.getElementById('invoice-margin').textContent = formatRupiah(Number(mesin.harga_jual) - Number(mesin.harga_beli) - totalRestorasi);
+  }
 }
 
 // ============================================================

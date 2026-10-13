@@ -539,3 +539,17 @@ tfoot th { border-top: 2px solid var(--obsidian); background: var(--bg-secondary
 }
 .kat-login-btn:hover { color: var(--obsidian); background: var(--mint); border-color: var(--mint); }
 .auth-card a { color: var(--text-primary); font-family: var(--font-mono); }
+
+/* ============================================================
+   Modal aktif, omzet, margin, rekap bulanan
+   ============================================================ */
+.kpi-sub { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+.mesin-card-line.untung { color: #0a7a5a; font-weight: 700; }
+.mesin-card-line.rugi, .teks-rugi { color: var(--danger) !important; }
+[data-theme="dark"] .mesin-card-line.untung { color: var(--mint); }
+.rb-ringkasan td { border: 1px solid #ccc; padding: 9px 10px; vertical-align: middle; }
+.rb-ket { font-size: 0.72rem; color: #666; font-weight: 400; }
+.rb-nilai { font-family: var(--font-mono); font-weight: 700; white-space: nowrap; font-size: 0.95rem; }
+.rb-ringkasan .rb-total td { background: #eaf7f2; border-top: 2px solid #111; }
+.rb-peringatan { background: #fff4d6; border: 1px solid #d9a400; color: #5c4400; border-radius: 4px; padding: 8px 12px; font-size: 0.78rem; margin-bottom: 12px; }
+.invoice-jual td { font-weight: 700; }

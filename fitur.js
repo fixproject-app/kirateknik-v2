@@ -787,3 +787,168 @@ function renderAsetRiwayat() {
     <td>${esc(r.nama_part)}</td><td class="text-center">${r.qty}</td><td class="small">${esc(r.keterangan || '')}</td></tr>`).join('')
     || '<tr><td colspan="5" class="text-muted">Belum ada riwayat.</td></tr>';
 }
+
+// ============================================================
+// MODAL AKTIF, TANDAI TERJUAL (harga jual & margin), REKAP BULANAN
+// Rumus:  HPP = harga beli + biaya restorasi (ongkos mekanik + sparepart)
+//         Margin = harga jual - HPP
+//         Modal aktif = HPP semua mesin yang BELUM terjual
+// ============================================================
+function teksTanggal(iso) {
+  if (!iso) return '-';
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+function kelasMargin(n) { return n < 0 ? 'teks-rugi' : ''; }
+
+// ── Detail Modal Aktif ──
+document.getElementById('btn-detail-modal').addEventListener('click', () => {
+  const aktif = dashboardRows.filter(r => statusMesin(r) !== 'terjual').sort((a, b) => hppMesin(b) - hppMesin(a));
+  document.getElementById('tbody-modal-aktif').innerHTML = aktif.map(r => `
+    <tr><td>${esc(r.nama_mesin)}<div class="text-muted small">${STATUS_LABEL[statusMesin(r)]}</div></td>
+    <td class="text-end">${formatRupiah(r.harga_beli)}</td><td class="text-end">${formatRupiah(biayaRestorasi(r))}</td>
+    <td class="text-end">${formatRupiah(hppMesin(r))}</td></tr>`).join('')
+    || '<tr><td colspan="4" class="text-muted">Tidak ada mesin aktif.</td></tr>';
+  document.getElementById('ma-total-beli').textContent = formatRupiah(aktif.reduce((s, r) => s + Number(r.harga_beli), 0));
+  document.getElementById('ma-total-resto').textContent = formatRupiah(aktif.reduce((s, r) => s + biayaRestorasi(r), 0));
+  document.getElementById('ma-total').textContent = formatRupiah(aktif.reduce((s, r) => s + hppMesin(r), 0));
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-modal-aktif')).show();
+});
+
+// ── Tandai Terjual ──
+let terjualCtx = null;
+function bukaModalTerjual(ctx) {
+  terjualCtx = ctx;
+  document.getElementById('tj-nama').textContent = ctx.nama;
+  document.getElementById('tj-harga').value = ctx.hargaJual != null ? Number(ctx.hargaJual) : '';
+  document.getElementById('tj-tanggal').value = ctx.tanggal || tanggalLokal();
+  document.getElementById('tj-hpp').textContent = formatRupiah(ctx.hpp);
+  hitungMarginTerjual();
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-terjual')).show();
+}
+function hitungMarginTerjual() {
+  const teks = document.getElementById('tj-harga').value;
+  const el = document.getElementById('tj-margin');
+  if (teks === '' || !terjualCtx) { el.textContent = '-'; el.classList.remove('teks-rugi'); return; }
+  const margin = Number(teks) - terjualCtx.hpp;
+  el.textContent = formatRupiah(margin);
+  el.classList.toggle('teks-rugi', margin < 0);
+}
+document.getElementById('tj-harga').addEventListener('input', hitungMarginTerjual);
+document.getElementById('btn-simpan-terjual').addEventListener('click', async () => {
+  if (!terjualCtx) return;
+  const teks = document.getElementById('tj-harga').value;
+  const tanggal = document.getElementById('tj-tanggal').value;
+  if (teks === '' || Number(teks) < 0) { showToast('Isi harga jual dengan benar.', 'error'); return; }
+  if (!tanggal) { showToast('Isi tanggal terjual.', 'error'); return; }
+  const r = await callSupabase(
+    sb.from('mesin').update({ status_manual: 'terjual', harga_jual: Number(teks), tanggal_terjual: tanggal }).eq('id', terjualCtx.mesinId),
+    'Mesin ditandai terjual.');
+  if (!r.success) return;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-terjual')).hide();
+  const setelah = terjualCtx.setelah;
+  terjualCtx = null;
+  if (setelah) setelah();
+});
+
+// ── Rekap Bulanan (tab pada halaman Rekap / Invoice) ──
+function setTabInvoice(tab) {
+  document.querySelectorAll('#invoice-tabs .status-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('invoice-tab-mesin').classList.toggle('d-none', tab !== 'mesin');
+  document.getElementById('invoice-tab-bulanan').classList.toggle('d-none', tab !== 'bulanan');
+  if (tab === 'bulanan') {
+    if (!document.getElementById('rb-mulai').value) terapkanPresetRekap('bulan-ini');
+    muatRekapBulanan();
+  }
+}
+document.querySelectorAll('#invoice-tabs .status-tab').forEach(b => b.addEventListener('click', () => setTabInvoice(b.dataset.tab)));
+
+function terapkanPresetRekap(preset) {
+  const r = rentangTanggal(preset);
+  document.getElementById('rb-mulai').value = r.mulai;
+  document.getElementById('rb-sampai').value = r.sampai;
+  document.querySelectorAll('.rb-preset').forEach(b => b.classList.toggle('active', b.dataset.preset === preset));
+}
+document.querySelectorAll('.rb-preset').forEach(b => b.addEventListener('click', () => { terapkanPresetRekap(b.dataset.preset); muatRekapBulanan(); }));
+['rb-mulai', 'rb-sampai'].forEach(id => document.getElementById(id).addEventListener('change', () => {
+  document.querySelectorAll('.rb-preset').forEach(b => b.classList.remove('active'));
+  muatRekapBulanan();
+}));
+document.getElementById('btn-cetak-rekap').addEventListener('click', () => window.print());
+
+async function muatRekapBulanan() {
+  const mulai = document.getElementById('rb-mulai').value;
+  const sampai = document.getElementById('rb-sampai').value;
+  if (!mulai || !sampai) return;
+  if (mulai > sampai) { showToast('Tanggal mulai tidak boleh setelah tanggal akhir.', 'error'); return; }
+
+  showLoading();
+  let mesinRes, tahapRes, asetRes, keluarRes;
+  try {
+    [mesinRes, tahapRes, asetRes, keluarRes] = await Promise.all([
+      sb.from('v_rekap_mesin').select('*'),
+      sb.from('tahap_restorasi').select('id, tanggal_pengerjaan, tahap_sparepart(harga_terpakai), tahap_mekanik(ongkos)')
+        .gte('tanggal_pengerjaan', mulai).lte('tanggal_pengerjaan', sampai),
+      sb.from('asset_part').select('qty, harga'),
+      sb.from('asset_part_riwayat').select('*').eq('jenis', 'keluar').gte('tanggal', mulai).lte('tanggal', sampai).order('tanggal', { ascending: true }),
+    ]);
+  } finally { hideLoading(); }
+  const gagal = [mesinRes, tahapRes, asetRes, keluarRes].find(x => x.error);
+  if (gagal) { showToast('Gagal memuat rekap: ' + gagal.error.message, 'error'); return; }
+
+  const mesin = mesinRes.data || [];
+  const dalam = (t) => t && t >= mulai && t <= sampai;
+
+  const dibeli = mesin.filter(r => dalam(r.tanggal_pembelian));
+  const totalBeli = dibeli.reduce((s, r) => s + Number(r.harga_beli), 0);
+
+  const tahap = tahapRes.data || [];
+  const totalResto = tahap.reduce((s, t) =>
+    s + (t.tahap_mekanik || []).reduce((a, m) => a + Number(m.ongkos), 0)
+      + (t.tahap_sparepart || []).reduce((a, p) => a + Number(p.harga_terpakai), 0), 0);
+
+  const terjual = mesin.filter(r => r.status_manual === 'terjual' && r.harga_jual != null && dalam(r.tanggal_terjual))
+    .sort((a, b) => a.tanggal_terjual.localeCompare(b.tanggal_terjual));
+  const omzet = terjual.reduce((s, r) => s + Number(r.harga_jual), 0);
+  const hppTerjual = terjual.reduce((s, r) => s + hppMesin(r), 0);
+  const untung = omzet - hppTerjual;
+  const belumLengkap = mesin.filter(r => r.status_manual === 'terjual' && (r.harga_jual == null || !r.tanggal_terjual)).length;
+
+  const nilaiAset = (asetRes.data || []).reduce((s, p) => s + p.qty * Number(p.harga), 0);
+  const keluar = keluarRes.data || [];
+  const nilaiKeluar = keluar.reduce((s, r) => s + r.qty * Number(r.harga), 0);
+
+  document.getElementById('rb-sheet').classList.remove('d-none');
+  document.getElementById('rb-nama-usaha').textContent = namaUsaha();
+  document.getElementById('rb-alamat').textContent = alamatUsaha();
+  if (logoEfektif()) document.getElementById('rb-logo').innerHTML = `<img src="${esc(logoEfektif())}" alt="Logo" style="width:100%;height:100%;object-fit:contain" />`;
+  document.getElementById('rb-periode').textContent = `${teksTanggal(mulai)} s/d ${teksTanggal(sampai)}`;
+
+  const peringatan = document.getElementById('rb-peringatan');
+  peringatan.classList.toggle('d-none', belumLengkap === 0);
+  peringatan.textContent = belumLengkap
+    ? `${belumLengkap} mesin berstatus Terjual belum punya harga jual/tanggal terjual sehingga tidak ikut dihitung. Buka Rekap mesinnya lalu klik "Ubah Harga Jual".` : '';
+
+  const baris = [
+    ['Pembelian Mesin', `${dibeli.length} unit (berdasarkan tanggal beli)`, formatRupiah(totalBeli), ''],
+    ['Biaya Restorasi', `${tahap.length} tahap (berdasarkan tanggal pengerjaan)`, formatRupiah(totalResto), ''],
+    ['Mesin Terjual (Omzet)', `${terjual.length} unit`, formatRupiah(omzet), ''],
+    ['HPP Mesin Terjual', 'Harga beli + seluruh biaya restorasi mesin tersebut', formatRupiah(hppTerjual), ''],
+    ['Keuntungan Penjualan', 'Omzet - HPP', formatRupiah(untung), 'rb-total ' + kelasMargin(untung)],
+    ['Total Stok Nilai Part Aset', 'Kondisi saat ini (bukan per akhir periode)', formatRupiah(nilaiAset), ''],
+    ['Nilai Part Aset Keluar', `${keluar.length} transaksi dalam periode`, formatRupiah(nilaiKeluar), ''],
+  ];
+  document.getElementById('rb-ringkasan').innerHTML = baris.map(([a, b, c, k]) =>
+    `<tr class="${k}"><td><strong>${a}</strong><div class="rb-ket">${b}</div></td><td class="text-end rb-nilai">${c}</td></tr>`).join('');
+
+  document.getElementById('rb-terjual').innerHTML = terjual.map(r => {
+    const m = Number(r.harga_jual) - hppMesin(r);
+    return `<tr><td>${r.tanggal_terjual}</td><td>${esc(r.nama_mesin)}</td><td class="text-end">${formatRupiah(r.harga_jual)}</td>
+      <td class="text-end">${formatRupiah(hppMesin(r))}</td><td class="text-end ${kelasMargin(m)}">${formatRupiah(m)}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="text-center text-muted">Tidak ada mesin terjual pada periode ini.</td></tr>';
+
+  document.getElementById('rb-keluar').innerHTML = keluar.map(r => `
+    <tr><td>${r.tanggal}</td><td>${esc(r.nama_part)}</td><td class="text-center">${r.qty}</td>
+    <td class="text-end">${formatRupiah(r.harga)}</td><td class="text-end">${formatRupiah(r.qty * Number(r.harga))}</td></tr>`).join('')
+    || '<tr><td colspan="5" class="text-center text-muted">Tidak ada part keluar pada periode ini.</td></tr>';
+}
