@@ -141,6 +141,20 @@ async function prosesFotoMesin(file) {
   } finally { bersihkan(); }
 }
 
+// Foto part: crop 1:1 (persegi), maks 800x800, tanpa watermark, JPEG <= 1 MB
+async function prosesFotoPart(file) {
+  const { img, bersihkan } = await bukaFile(file);
+  try {
+    const { sx, sy, sw, sh } = hitungCrop(img, 1);
+    const W = Math.min(800, Math.round(sw));
+    const c = document.createElement('canvas'); c.width = W; c.height = W;
+    const ctx = c.getContext('2d'); ctx.imageSmoothingQuality = 'high';
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, W);
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, W);
+    return await kanvasKeBlob(c);
+  } finally { bersihkan(); }
+}
+
 // Banner katalog: crop 16:7, lebar 1600
 async function prosesFotoBanner(file) {
   const { img, bersihkan } = await bukaFile(file);
@@ -220,19 +234,21 @@ function buatUploader(wrap, { max = 4, mode = 'mesin' } = {}) {
   const grid = wrap.querySelector('.up-grid');
   const inKamera = wrap.querySelector('.up-in-kamera');
   const inGaleri = wrap.querySelector('.up-in-galeri');
+  if (max === 1) inGaleri.multiple = false;
 
   st.render = () => {
     grid.innerHTML = st.items.map((it, i) => `
       <div class="up-item">
         <img src="${esc(it.preview)}" alt="Foto ${i + 1}" />
-        ${i === 0 && mode !== 'tahap' ? `<span class="up-sampul">${mode === 'banner' ? 'Pertama' : 'Sampul'}</span>` : ''}
+        ${i === 0 && mode !== 'tahap' && mode !== 'part' ? `<span class="up-sampul">${mode === 'banner' ? 'Pertama' : 'Sampul'}</span>` : ''}
         <button type="button" class="up-x" data-aksi="hapus" data-i="${i}" title="Hapus"><i class="bi bi-x-lg"></i></button>
-        ${i > 0 && mode !== 'tahap' ? `<button type="button" class="up-utama" data-aksi="utama" data-i="${i}">Jadikan ${mode === 'banner' ? 'pertama' : 'sampul'}</button>` : ''}
+        ${i > 0 && mode !== 'tahap' && mode !== 'part' ? `<button type="button" class="up-utama" data-aksi="utama" data-i="${i}">Jadikan ${mode === 'banner' ? 'pertama' : 'sampul'}</button>` : ''}
       </div>`).join('');
     const penuh = st.items.length >= st.max;
     wrap.querySelector('.up-kamera').disabled = penuh;
     wrap.querySelector('.up-galeri').disabled = penuh;
     wrap.querySelector('.up-info').textContent = `${st.items.length} / ${st.max} foto`;
+    wrap.classList.toggle('up-satu', st.max === 1);
   };
 
   grid.addEventListener('click', (e) => {
@@ -263,7 +279,7 @@ function buatUploader(wrap, { max = 4, mode = 'mesin' } = {}) {
             const r = await prosesFotoTahap(f);
             st.items.push({ blob: r.blob, diambil: r.diambil, preview: URL.createObjectURL(r.blob) });
           } else {
-            const blob = mode === 'banner' ? await prosesFotoBanner(f) : await prosesFotoMesin(f);
+            const blob = mode === 'banner' ? await prosesFotoBanner(f) : mode === 'part' ? await prosesFotoPart(f) : await prosesFotoMesin(f);
             st.items.push({ blob, preview: URL.createObjectURL(blob) });
           }
         } catch (err) { showToast(err.message || 'Foto gagal diproses.', 'error'); }
@@ -622,7 +638,7 @@ document.getElementById('btn-detail-aset').addEventListener('click', async () =>
   await muatKpiAset();
   const baris = cachedAsset.filter(p => p.qty > 0);
   document.getElementById('tbody-aset-detail').innerHTML = baris.map(p => `
-    <tr><td>${esc(p.nama_part)}<div class="text-muted small">${formatRupiah(p.harga)} / unit</div></td>
+    <tr><td><div class="d-flex align-items-center gap-2">${thumbPartHtml(p)}<div>${esc(p.nama_part)}<div class="text-muted small">${formatRupiah(p.harga)} / unit</div></div></div></td>
     <td class="text-center">${p.qty}</td><td class="text-end">${formatRupiah(p.qty * Number(p.harga))}</td></tr>`).join('')
     || '<tr><td colspan="3" class="text-muted">Belum ada part di stok.</td></tr>';
   document.getElementById('aset-detail-total').textContent = formatRupiah(baris.reduce((s, p) => s + p.qty * Number(p.harga), 0));
@@ -656,58 +672,101 @@ function renderAsset() {
   if (asetTab === 'riwayat') renderAsetRiwayat();
 }
 
+const uploaderPart = buatUploader(document.getElementById('ep-foto'), { max: 1, mode: 'part' });
+const uploaderPartBaru = buatUploader(document.getElementById('am-foto'), { max: 1, mode: 'part' });
+let editPartId = null;
+
+function thumbPartHtml(p) {
+  return p.foto_url
+    ? `<img class="part-thumb" src="${esc(p.foto_url)}" alt="${esc(p.nama_part)}" loading="lazy" onclick="openFotoModal('${esc(p.foto_url)}')" />`
+    : `<div class="part-thumb part-thumb-kosong"><i class="bi bi-image"></i></div>`;
+}
+
+// Unggah foto part (1:1). Hasil: url baru, null jika dihapus, undefined jika tidak berubah.
+async function simpanFotoPart(partId, st, urlLama) {
+  const baru = st.items.find(it => it.blob);
+  if (baru) {
+    const url = await unggahBlob(`part/${partId}/${Date.now()}.jpg`, baru.blob);
+    if (urlLama) await hapusFileStorage([urlLama]);
+    return url;
+  }
+  if (!st.items.length && st.hapus.length) {
+    if (urlLama) await hapusFileStorage([urlLama]);
+    return null;
+  }
+  return undefined;
+}
+
 function renderAsetStok() {
   const kw = (document.getElementById('asset-cari').value || '').toLowerCase();
   const rows = cachedAsset.filter(p => p.nama_part.toLowerCase().includes(kw));
   document.getElementById('tbody-asset-stok').innerHTML = rows.map(p => `
     <tr data-id="${p.id}">
-      <td><span class="as-teks">${esc(p.nama_part)}</span><input type="text" class="form-control form-control-sm as-nama d-none" value="${esc(p.nama_part)}" /></td>
-      <td class="text-center"><span class="as-teks">${p.qty}</span><input type="number" min="0" step="1" class="form-control form-control-sm as-qty d-none text-center" value="${p.qty}" /></td>
-      <td class="text-end"><span class="as-teks">${formatRupiah(p.harga)}</span><input type="number" min="0" step="500" class="form-control form-control-sm as-harga d-none text-end" value="${Number(p.harga)}" /></td>
+      <td>${thumbPartHtml(p)}</td>
+      <td>${esc(p.nama_part)}</td>
+      <td class="text-center">${p.qty}</td>
+      <td class="text-end">${formatRupiah(p.harga)}</td>
       <td class="text-end">${formatRupiah(p.qty * Number(p.harga))}</td>
       <td class="text-end text-nowrap">
         <button class="btn btn-outline-secondary btn-sm" data-edit-part="${p.id}"><i class="bi bi-pencil"></i></button>
         <button class="btn btn-outline-danger btn-sm" data-hapus-part="${p.id}"><i class="bi bi-trash"></i></button>
       </td>
-    </tr>`).join('') || '<tr><td colspan="5" class="text-muted">Belum ada part. Tambahkan lewat tab Part Masuk.</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="6" class="text-muted">Belum ada part. Tambahkan lewat tab Part Masuk.</td></tr>';
   document.getElementById('asset-grand-total').textContent = formatRupiah(cachedAsset.reduce((s, p) => s + p.qty * Number(p.harga), 0));
 
-  document.querySelectorAll('[data-edit-part]').forEach(btn => btn.addEventListener('click', async () => {
-    const tr = btn.closest('tr');
-    const inputs = tr.querySelectorAll('.as-nama, .as-qty, .as-harga');
-    const sedangEdit = !inputs[0].classList.contains('d-none');
-    if (!sedangEdit) {
-      tr.querySelectorAll('.as-teks').forEach(x => x.classList.add('d-none'));
-      inputs.forEach(x => x.classList.remove('d-none'));
-      btn.innerHTML = '<i class="bi bi-check-lg"></i>';
-      return;
-    }
-    const lama = cachedAsset.find(x => x.id === btn.dataset.editPart);
-    const nama = tr.querySelector('.as-nama').value.trim();
-    const qty = parseInt(tr.querySelector('.as-qty').value, 10);
-    const harga = Number(tr.querySelector('.as-harga').value) || 0;
-    if (!nama) { showToast('Nama part tidak boleh kosong.', 'error'); return; }
-    if (!(qty >= 0)) { showToast('Qty tidak valid.', 'error'); return; }
-    const r = await callSupabase(sb.from('asset_part').update({ nama_part: nama, qty, harga }).eq('id', lama.id), 'Part diperbarui.');
-    if (!r.success) return;
-    const ubah = [];
-    if (nama !== lama.nama_part) ubah.push(`nama "${lama.nama_part}" → "${nama}"`);
-    if (qty !== lama.qty) ubah.push(`qty ${lama.qty} → ${qty}`);
-    if (harga !== Number(lama.harga)) ubah.push(`harga ${formatRupiah(lama.harga)} → ${formatRupiah(harga)}`);
-    if (ubah.length) {
-      await sb.from('asset_part_riwayat').insert({ part_id: lama.id, nama_part: nama, jenis: 'koreksi', qty, harga, keterangan: 'Edit: ' + ubah.join(', ') });
-    }
-    loadAsset();
-  }));
+  document.querySelectorAll('[data-edit-part]').forEach(btn => btn.addEventListener('click', () => bukaEditPart(btn.dataset.editPart)));
 
   document.querySelectorAll('[data-hapus-part]').forEach(btn => btn.addEventListener('click', async () => {
     const p = cachedAsset.find(x => x.id === btn.dataset.hapusPart);
     if (!confirm(`Hapus part "${p.nama_part}" (stok ${p.qty})? Riwayat transaksinya tetap tersimpan.`)) return;
     await sb.from('asset_part_riwayat').insert({ part_id: null, nama_part: p.nama_part, jenis: 'hapus', qty: p.qty, harga: p.harga, keterangan: 'Part dihapus dari stok' });
     const r = await callSupabase(sb.from('asset_part').delete().eq('id', p.id), 'Part dihapus.');
-    if (r.success) loadAsset();
+    if (r.success) { if (p.foto_url) await hapusFileStorage([p.foto_url]); loadAsset(); }
   }));
 }
+
+function bukaEditPart(id) {
+  const p = cachedAsset.find(x => x.id === id);
+  if (!p) return;
+  editPartId = id;
+  document.getElementById('ep-nama').value = p.nama_part;
+  document.getElementById('ep-qty').value = p.qty;
+  document.getElementById('ep-harga').value = Number(p.harga);
+  uploaderPart.setItems(p.foto_url ? [{ url: p.foto_url, preview: p.foto_url }] : []);
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-edit-part')).show();
+}
+
+document.getElementById('btn-simpan-edit-part').addEventListener('click', async () => {
+  const lama = cachedAsset.find(x => x.id === editPartId);
+  if (!lama) return;
+  const nama = document.getElementById('ep-nama').value.trim();
+  const qty = parseInt(document.getElementById('ep-qty').value, 10);
+  const harga = Number(document.getElementById('ep-harga').value) || 0;
+  if (!nama) { showToast('Nama part tidak boleh kosong.', 'error'); return; }
+  if (!(qty >= 0)) { showToast('Qty tidak valid.', 'error'); return; }
+
+  const perubahan = { nama_part: nama, qty, harga };
+  showLoading();
+  try {
+    const fotoBaru = await simpanFotoPart(lama.id, uploaderPart, lama.foto_url);
+    if (fotoBaru !== undefined) perubahan.foto_url = fotoBaru;
+  } catch (err) {
+    hideLoading(); showToast('Foto gagal disimpan: ' + (err.message || err), 'error'); return;
+  }
+  hideLoading();
+
+  const r = await callSupabase(sb.from('asset_part').update(perubahan).eq('id', lama.id), 'Part diperbarui.');
+  if (!r.success) return;
+  const ubah = [];
+  if (nama !== lama.nama_part) ubah.push(`nama "${lama.nama_part}" → "${nama}"`);
+  if (qty !== lama.qty) ubah.push(`qty ${lama.qty} → ${qty}`);
+  if (harga !== Number(lama.harga)) ubah.push(`harga ${formatRupiah(lama.harga)} → ${formatRupiah(harga)}`);
+  if (ubah.length) {
+    await sb.from('asset_part_riwayat').insert({ part_id: lama.id, nama_part: nama, jenis: 'koreksi', qty, harga, keterangan: 'Edit: ' + ubah.join(', ') });
+  }
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-edit-part')).hide();
+  loadAsset();
+});
 document.getElementById('asset-cari').addEventListener('input', renderAsetStok);
 
 function renderAsetMasuk() {
@@ -717,11 +776,13 @@ function renderAsetMasuk() {
     + cachedAsset.map(p => `<option value="${p.id}">${esc(p.nama_part)} (stok ${p.qty})</option>`).join('');
   sel.value = cachedAsset.some(p => p.id === nilai) ? nilai : '';
   document.getElementById('am-nama-wrap').classList.toggle('d-none', sel.value !== '');
+  document.getElementById('am-foto-wrap').classList.toggle('d-none', sel.value !== '');
   renderDaftarTransaksi('masuk', 'list-asset-masuk');
 }
 document.getElementById('am-part').addEventListener('change', (e) => {
   const p = cachedAsset.find(x => x.id === e.target.value);
   document.getElementById('am-nama-wrap').classList.toggle('d-none', Boolean(p));
+  document.getElementById('am-foto-wrap').classList.toggle('d-none', Boolean(p));
   document.getElementById('am-harga').value = p ? Number(p.harga) : '';
 });
 document.getElementById('form-asset-masuk').addEventListener('submit', async (e) => {
@@ -735,7 +796,17 @@ document.getElementById('form-asset-masuk').addEventListener('submit', async (e)
     p_ket: document.getElementById('am-ket').value.trim() || null,
     p_tanggal: document.getElementById('am-tanggal').value || null,
   }), 'Part masuk tersimpan.');
-  if (r.success) { e.target.reset(); document.getElementById('am-tanggal').value = tanggalLokal(); loadAsset(); }
+  if (r.success) {
+    // Part baru + ada foto: unggah lalu simpan alamatnya
+    if (!partId && r.data && uploaderPartBaru.items.length) {
+      try {
+        const url = await simpanFotoPart(r.data, uploaderPartBaru, null);
+        if (url) await sb.from('asset_part').update({ foto_url: url }).eq('id', r.data);
+      } catch (err) { showToast('Part tersimpan, tetapi foto gagal: ' + (err.message || err), 'error'); }
+    }
+    uploaderPartBaru.reset();
+    e.target.reset(); document.getElementById('am-tanggal').value = tanggalLokal(); loadAsset();
+  }
 });
 
 function renderAsetKeluar() {
