@@ -590,3 +590,9 @@ tfoot th { border-top: 2px solid var(--obsidian); background: var(--bg-secondary
 [data-theme="dark"] .form-check-input { border-color: var(--mint); background-color: var(--bg-secondary); }
 [data-theme="dark"] .form-check-input:checked { background-color: var(--mint); border-color: var(--mint); }
 .form-control:disabled, .form-select:disabled { background: var(--bg-secondary); color: var(--text-muted); }
+
+/* Foto part (Asset Part) */
+.part-thumb { width: 44px; height: 44px; object-fit: cover; aspect-ratio: 1/1; border: 2px solid var(--obsidian); border-radius: var(--radius); display: block; cursor: pointer; background: var(--bg-secondary); flex-shrink: 0; }
+.part-thumb-kosong { display: flex; align-items: center; justify-content: center; color: var(--text-muted); cursor: default; font-size: 1rem; }
+.up-satu .up-grid { grid-template-columns: minmax(0, 160px); }
+.up-satu .up-item img { aspect-ratio: 1/1; }
