@@ -298,35 +298,69 @@ function statusMesin(r) {
 function biayaRestorasi(r) { return Number(r.total_ongkos_kerja) + Number(r.total_sparepart); }
 function hppMesin(r) { return Number(r.harga_beli) + biayaRestorasi(r); }
 
-// Modal Aktif = HPP (harga beli + restorasi) semua mesin yang BELUM terjual.
-// Omzet bulan ini = jumlah harga jual mesin yang tanggal terjualnya di bulan berjalan.
+// Modal Aktif = HPP (harga beli + restorasi) semua mesin yang BELUM terjual (kondisi saat ini, tidak terpengaruh periode).
+// Periode dashboard: Total Mesin = tanggal beli; Omzet = tanggal terjual; Biaya Restorasi & Total Tahap = tanggal
+// pengerjaan tahap, hanya untuk mesin yang BELUM terjual.
+let dashboardTahap = [];
+let dashPeriode = { mulai: '', sampai: '' };
+const dalamPeriode = (tgl) => !!tgl && (!dashPeriode.mulai || tgl >= dashPeriode.mulai) && (!dashPeriode.sampai || tgl <= dashPeriode.sampai);
+
 function hitungKpiKeuangan() {
   const aktif = dashboardRows.filter(r => statusMesin(r) !== 'terjual');
   document.getElementById('kpi-modal-aktif').textContent = formatRupiah(aktif.reduce((s, r) => s + hppMesin(r), 0));
   document.getElementById('kpi-modal-aktif-sub').textContent = `${aktif.length} mesin belum terjual`;
-  const bln = rentangTanggal('bulan-ini');
-  const terjual = dashboardRows.filter(r => r.status_manual === 'terjual' && r.harga_jual != null && r.tanggal_terjual
-    && r.tanggal_terjual >= bln.mulai && r.tanggal_terjual <= bln.sampai);
+
+  const terjual = dashboardRows.filter(r => r.status_manual === 'terjual' && r.harga_jual != null && dalamPeriode(r.tanggal_terjual));
   document.getElementById('kpi-omzet').textContent = formatRupiah(terjual.reduce((s, r) => s + Number(r.harga_jual), 0));
   const margin = terjual.reduce((s, r) => s + Number(r.harga_jual) - hppMesin(r), 0);
   document.getElementById('kpi-omzet-sub').textContent = terjual.length
-    ? `${terjual.length} mesin terjual • margin ${formatRupiah(margin)}` : 'Belum ada penjualan bulan ini';
+    ? `${terjual.length} mesin terjual • margin ${formatRupiah(margin)}` : 'Belum ada penjualan pada periode ini';
 }
 
+function hitungKpiPeriode() {
+  const belumTerjual = new Set(dashboardRows.filter(r => statusMesin(r) !== 'terjual').map(r => r.mesin_id));
+  const tahap = dashboardTahap.filter(t => belumTerjual.has(t.mesin_id) && dalamPeriode(t.tanggal_pengerjaan));
+  const biayaTahap = (t) => Number(t.ongkos_kerja || 0) + (t.tahap_sparepart || []).reduce((s, x) => s + Number(x.harga_terpakai || 0), 0);
+
+  document.getElementById('kpi-total-mesin').textContent = dashboardRows.filter(r => !dashPeriode.mulai && !dashPeriode.sampai ? true : dalamPeriode(r.tanggal_pembelian)).length;
+  document.getElementById('kpi-total-biaya').textContent = formatRupiah(tahap.reduce((s, t) => s + biayaTahap(t), 0));
+  document.getElementById('kpi-total-tahap').textContent = tahap.length;
+  document.getElementById('kpi-omzet-label').textContent = (dashPeriode.mulai || dashPeriode.sampai) ? 'Omzet Periode' : 'Omzet (Semua)';
+  document.getElementById('dash-periode-info').textContent = (dashPeriode.mulai || dashPeriode.sampai)
+    ? `Periode: ${dashPeriode.mulai || '…'} s/d ${dashPeriode.sampai || '…'}` : 'Periode: semua tanggal';
+
+  const perMesin = {};
+  tahap.forEach(t => { perMesin[t.mesin_id] = (perMesin[t.mesin_id] || 0) + biayaTahap(t); });
+  const [idTop, nilaiTop] = Object.entries(perMesin).sort((a, b) => b[1] - a[1])[0] || [];
+  const termahal = idTop && dashboardRows.find(r => r.mesin_id === idTop);
+  document.getElementById('ai-insight').textContent = termahal
+    ? `Mesin belum terjual dengan biaya restorasi tertinggi${(dashPeriode.mulai || dashPeriode.sampai) ? ' pada periode ini' : ''}: "${termahal.nama_mesin}" sebesar ${formatRupiah(nilaiTop)}.`
+    : 'Belum ada data restorasi mesin belum terjual untuk dianalisis.';
+  hitungKpiKeuangan();
+}
+
+document.querySelectorAll('.dash-preset').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('.dash-preset').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const r = rentangTanggal(btn.dataset.preset) || { mulai: '', sampai: '' };
+  document.getElementById('dash-mulai').value = r.mulai; document.getElementById('dash-sampai').value = r.sampai;
+  dashPeriode = r; hitungKpiPeriode();
+}));
+['dash-mulai', 'dash-sampai'].forEach(id => document.getElementById(id).addEventListener('change', () => {
+  document.querySelectorAll('.dash-preset').forEach(b => b.classList.remove('active'));
+  dashPeriode = { mulai: document.getElementById('dash-mulai').value, sampai: document.getElementById('dash-sampai').value };
+  hitungKpiPeriode();
+}));
+
 async function loadDashboardData() {
-  const result = await callSupabase(sb.from('v_rekap_mesin').select('*').order('nama_mesin', { ascending: true }));
+  const [result, tahapRes] = await Promise.all([
+    callSupabase(sb.from('v_rekap_mesin').select('*').order('nama_mesin', { ascending: true })),
+    sb.from('tahap_restorasi').select('mesin_id, tanggal_pengerjaan, ongkos_kerja, tahap_sparepart(harga_terpakai)')
+  ]);
   if (!result.success) return;
   dashboardRows = result.data;
-
-  document.getElementById('kpi-total-mesin').textContent = dashboardRows.length;
-  document.getElementById('kpi-total-biaya').textContent = formatRupiah(dashboardRows.reduce((s, r) => s + biayaRestorasi(r), 0));
-  document.getElementById('kpi-total-tahap').textContent = dashboardRows.reduce((s, r) => s + Number(r.jumlah_tahap), 0);
-  hitungKpiKeuangan();
-
-  const termahal = [...dashboardRows].sort((a, b) => biayaRestorasi(b) - biayaRestorasi(a))[0];
-  document.getElementById('ai-insight').textContent = termahal
-    ? `Mesin dengan biaya restorasi tertinggi saat ini: "${termahal.nama_mesin}" sebesar ${formatRupiah(biayaRestorasi(termahal))}.`
-    : 'Belum ada data mesin untuk dianalisis.';
+  dashboardTahap = tahapRes.data || [];
+  hitungKpiPeriode();
   renderMesinGrid();
   muatKpiAset();
 }
